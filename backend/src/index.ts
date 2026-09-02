@@ -28,13 +28,13 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.use('/api/auth', authRoutes);
-app.use('/api/client', clientRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/plans', planRoutes);
-app.use('/api/properties', propertyRoutes);
-app.use('/api/admin', authenticateToken, adminRoutes);
+app.use('/auth', authRoutes);
+app.use('/client', clientRoutes);
+app.use('/payments', paymentRoutes);
+app.use('/webhooks', webhookRoutes);
+app.use('/plans', planRoutes);
+app.use('/properties', propertyRoutes);
+app.use('/admin', authenticateToken, adminRoutes);
 
 // Start background cron jobs
 startInvoiceEngine();
