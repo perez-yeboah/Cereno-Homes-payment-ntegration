@@ -7,13 +7,13 @@ import RentToOwnForm from './forms/RentToOwnForm';
 import PayToOwnForm from './forms/PayToOwnForm';
 
 const fetchProperties = async () => {
-  const { data } = await axios.get('/api/client/properties');
+  const { data } = await axios.get(`${import.meta.env.VITE_API_URL || ''}/api/client/properties`);
   return data;
 };
 
 const fetchInterests = async (token: string | null) => {
   if (!token) return [];
-  const { data } = await axios.get('/api/client/interests', {
+  const { data } = await axios.get(`${import.meta.env.VITE_API_URL || ''}/api/client/interests`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   return data;
@@ -86,7 +86,7 @@ const ClientDashboard: React.FC = () => {
 
   const submitInterestMutation = useMutation({
     mutationFn: async (payload: any = formData) => {
-      const { data } = await axios.post('/api/client/interests', 
+      const { data } = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/client/interests`, 
         { propertyId: selectedProperty.id, submittedData: payload },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -107,7 +107,7 @@ const ClientDashboard: React.FC = () => {
 
   const createPlanMutation = useMutation({
     mutationFn: async () => {
-      const { data } = await axios.post('/api/client/plans', 
+      const { data } = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/client/plans`, 
         { propertyId: selectedApprovedInterest.propertyId, type: planType },
         { headers: { Authorization: `Bearer ${token}` } }
       );

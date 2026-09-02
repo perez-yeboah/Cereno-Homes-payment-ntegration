@@ -24,7 +24,7 @@ const Login: React.FC = () => {
   const onSubmit = async (data: LoginForm) => {
     setApiError(null);
     try {
-      const response = await axios.post('/api/auth/login', data);
+      const response = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/auth/login`, data);
       localStorage.setItem('adminToken', response.data.token);
       navigate('/admin');
     } catch (error: any) {
