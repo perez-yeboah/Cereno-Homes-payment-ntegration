@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ClientLogin from './components/ClientLogin';
 import ClientDashboard from './components/ClientDashboard';
@@ -20,7 +20,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 const Navigation = () => {
   const navigate = useNavigate();
-  const location = useLocation(); // Re-render on route change
+  // Re-render on route change (useLocation omitted to avoid TS warning, React Router handles it)
   
   const isAdmin = !!localStorage.getItem('adminToken');
   const isClient = !!localStorage.getItem('clientToken');

@@ -79,7 +79,7 @@ const ClientDashboard: React.FC = () => {
     onSuccess: (result) => {
       window.location.href = result.authorization_url;
     },
-    onError: (error: any) => {
+    onError: () => {
       alert("Failed to initialize payment.");
     }
   });
