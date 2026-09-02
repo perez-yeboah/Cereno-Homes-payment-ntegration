@@ -121,7 +121,7 @@ const AdminDashboard: React.FC = () => {
                 <div className="mt-4 w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
                   <div 
                     className="bg-brand-primary h-1.5 rounded-full transition-all duration-1000"
-                    style={{ width: `${Math.min(100, (plan.totalPaid / plan.totalAmount) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (plan.totalPaid / Number(plan.totalAmount)) * 100)}%` }}
                   ></div>
                 </div>
               </div>
@@ -149,7 +149,7 @@ const AdminDashboard: React.FC = () => {
                   <p className="text-sm text-red-400/80">Due: {new Date(invoice.dueDate).toLocaleDateString()}</p>
                 </div>
                 <div className="text-right">
-                  <span className="block font-semibold text-red-400">GHS {invoice.amountDue.toFixed(2)}</span>
+                  <span className="block font-semibold text-red-400">GHS {Number(invoice.amountDue).toFixed(2)}</span>
                   <span className="text-xs text-red-500 font-medium">{invoice.daysOverdue} days overdue</span>
                 </div>
               </div>
@@ -180,7 +180,7 @@ const AdminDashboard: React.FC = () => {
                 <span className={`text-xs px-2 py-1 rounded border ${property.status === 'AVAILABLE' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-slate-700/50 text-slate-300 border-slate-600'}`}>
                   {property.status}
                 </span>
-                <span className="text-sm font-semibold text-brand-secondary">GHS {property.basePrice}</span>
+                <span className="text-sm font-semibold text-brand-secondary">GHS {Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
               </div>
               <h3 className="font-medium text-lg text-slate-100 mb-2">{property.address}</h3>
               <p className="text-slate-400 text-sm mb-4 line-clamp-2">{property.description || 'No description provided.'}</p>
