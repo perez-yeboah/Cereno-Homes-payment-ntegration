@@ -34,9 +34,9 @@ const Navigation = () => {
 
   return (
     <nav className="glass-panel sticky top-0 z-50 flex justify-between items-center px-8 py-4">
-      <div className="font-semibold text-xl tracking-wide">
+      <Link to="/" className="font-semibold text-xl tracking-wide hover:opacity-80 transition-opacity">
         Cereno<span className="text-brand-primary">Homes</span>
-      </div>
+      </Link>
       <div className="flex gap-6 text-sm font-medium items-center">
         {isLoggedIn && <Link to="/dashboard" className="text-slate-300 hover:text-white transition-colors">Client Portal</Link>}
         {isAdmin && <Link to="/admin" className="text-slate-300 hover:text-white transition-colors">Admin Dashboard</Link>}
