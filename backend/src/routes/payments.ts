@@ -1,0 +1,150 @@
+import { Router } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { initializePayment, verifyPayment } from '../services/paystack';
+
+const router = Router();
+const prisma = new PrismaClient();
+
+// In a real app, this would be authenticated
+router.post('/initialize', async (req, res) => {
+  const { paymentPlanId, amount, currency = 'GHS', channel, callbackUrl } = req.body;
+
+  try {
+    const paymentPlan = await prisma.paymentPlan.findUnique({
+      where: { id: paymentPlanId },
+      include: { client: true },
+    });
+
+    if (!paymentPlan) {
+      return res.status(404).json({ error: 'Payment plan not found' });
+    }
+
+    // Create a pending payment record
+    const payment = await prisma.payment.create({
+      data: {
+        provider: 'PAYSTACK',
+        providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`, // Temporary reference, real one should be robust
+        status: 'PENDING',
+        originalCurrency: currency,
+        originalAmount: amount,
+      },
+    });
+
+    // Initialize Paystack payment
+    const paystackData = await initializePayment(
+      paymentPlan.client.email,
+      amount,
+      currency,
+      payment.providerTransactionId,
+      callbackUrl,
+      { paymentPlanId }
+    );
+
+    res.json({
+      message: 'Payment initialized successfully',
+      authorization_url: paystackData.authorization_url,
+      access_code: paystackData.access_code,
+      reference: paystackData.reference,
+    });
+  } catch (error: any) {
+    console.error('Payment initialization error:', error);
+    res.status(500).json({ error: 'Internal server error during payment initialization' });
+  }
+});
+
+router.post('/verify', async (req, res) => {
+  const { reference } = req.body;
+  if (!reference) return res.status(400).json({ error: 'Reference is required' });
+
+  try {
+    const data = await verifyPayment(reference);
+    
+    if (data.status === 'success') {
+      await prisma.$transaction(async (tx) => {
+        const payment = await tx.payment.findUnique({
+          where: { providerTransactionId: reference },
+        });
+        
+        if (!payment || payment.status === 'SUCCESS') return;
+        
+        const settledAmountGHS = data.amount / 100;
+        
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { 
+            status: 'SUCCESS',
+            settledAmount: settledAmountGHS,
+            settledCurrency: data.currency
+          }
+        });
+        
+        const paymentPlanId = data.metadata?.paymentPlanId;
+        
+        if (paymentPlanId) {
+           const plan = await tx.paymentPlan.findUnique({ 
+             where: { id: paymentPlanId },
+             include: { client: true }
+           });
+           
+           if (plan) {
+              let equityPortion = settledAmountGHS;
+              let rentPortion = 0;
+              
+              if (plan.type === 'RENT_TO_OWN') {
+                const schedule = plan.scheduleDetails as any;
+                const rentDeduction = schedule?.rentDeductionAmount || 0;
+                
+                if (settledAmountGHS > rentDeduction) {
+                  rentPortion = rentDeduction;
+                  equityPortion = settledAmountGHS - rentDeduction;
+                } else {
+                  rentPortion = settledAmountGHS;
+                  equityPortion = 0;
+                }
+                
+                if (rentPortion > 0) {
+                  await tx.ledgerEntry.create({
+                    data: {
+                      paymentPlanId,
+                      type: 'RENT_DEDUCTION',
+                      amountGHS: -rentPortion,
+                      paymentId: payment.id,
+                    }
+                  });
+                }
+              }
+
+              await tx.ledgerEntry.create({
+                data: {
+                  paymentPlanId,
+                  type: 'PAYMENT',
+                  amountGHS: settledAmountGHS,
+                  paymentId: payment.id,
+                }
+              });
+              
+              if (equityPortion > 0) {
+                await tx.paymentPlan.update({
+                  where: { id: paymentPlanId },
+                  data: { equityAccrued: { increment: equityPortion } }
+                });
+              }
+              
+              if (plan.client && plan.client.email) {
+                // sendPaymentReceipt(plan.client.email, settledAmountGHS, data.currency, plan.id);
+                // skipped email in verify to avoid duplicate if webhook also fires
+              }
+           }
+        }
+      });
+      return res.json({ message: 'Payment verified successfully', status: 'success' });
+    } else {
+      return res.status(400).json({ error: 'Payment not successful' });
+    }
+  } catch (error) {
+    console.error('Error verifying payment:', error);
+    res.status(500).json({ error: 'Internal server error during verification' });
+  }
+});
+
+export default router;

@@ -1,0 +1,36 @@
+name: cereno-homes-platform
+region: lon
+services:
+  - name: api
+    github:
+      repo: your-github-org/cereno-homes-payment-integration
+      branch: main
+    source_dir: backend
+    environment_slug: node-js
+    build_command: npm install && npx prisma db push && npm run build
+    run_command: node dist/index.js
+    http_port: 3000
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: PAYSTACK_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+    routes:
+      - path: /api
+
+static_sites:
+  - name: frontend
+    github:
+      repo: your-github-org/cereno-homes-payment-integration
+      branch: main
+    source_dir: frontend
+    build_command: npm install && npm run build
+    output_dir: dist
+    routes:
+      - path: /
+    catchall_document: index.html
