@@ -6,16 +6,16 @@ import { initializePayment, cancelClientApplication, fetchClientPlans } from '..
 import RentToOwnForm from './forms/RentToOwnForm';
 import PayToOwnForm from './forms/PayToOwnForm';
 
+import api from '../services/api';
+
 const fetchProperties = async () => {
-  const { data } = await axios.get(`${import.meta.env.VITE_API_URL || ''}/api/client/properties`);
+  const { data } = await api.get('/client/properties');
   return data;
 };
 
 const fetchInterests = async (token: string | null) => {
   if (!token) return [];
-  const { data } = await axios.get(`${import.meta.env.VITE_API_URL || ''}/api/client/interests`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
+  const { data } = await api.get('/client/interests');
   return data;
 };
 
@@ -86,9 +86,8 @@ const ClientDashboard: React.FC = () => {
 
   const submitInterestMutation = useMutation({
     mutationFn: async (payload: any = formData) => {
-      const { data } = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/client/interests`, 
-        { propertyId: selectedProperty.id, submittedData: payload },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const { data } = await api.post('/client/interests', 
+        { propertyId: selectedProperty.id, submittedData: payload }
       );
       return data;
     },
@@ -107,9 +106,8 @@ const ClientDashboard: React.FC = () => {
 
   const createPlanMutation = useMutation({
     mutationFn: async () => {
-      const { data } = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/client/plans`, 
-        { propertyId: selectedApprovedInterest.propertyId, type: planType },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const { data } = await api.post('/client/plans', 
+        { propertyId: selectedApprovedInterest.propertyId, type: planType }
       );
       return data;
     },
