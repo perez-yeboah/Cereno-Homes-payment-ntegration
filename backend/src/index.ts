@@ -42,10 +42,15 @@ app.use('/admin', authenticateToken, adminRoutes);
 
 app.use((err: any, req: any, res: any, next: any) => {
   console.error("GLOBAL ERROR HANDLER:", err);
-  if (err && typeof err === 'object') {
-    console.error("ERROR JSON:", JSON.stringify(err, null, 2));
+  let errorMsg = err?.message;
+  if (!errorMsg) {
+    try {
+      errorMsg = typeof err === 'string' ? err : JSON.stringify(err);
+    } catch(e) {
+      errorMsg = 'Stringify failed';
+    }
   }
-  res.status(500).json({ error: err?.message || 'Server error' });
+  res.status(500).json({ error: errorMsg || 'Server error' });
 });
 
 // Start background cron jobs
