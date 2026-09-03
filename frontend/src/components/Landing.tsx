@@ -13,101 +13,106 @@ const Landing: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-80px)] w-full">
-      {/* Hero Section */}
-      <section className="relative flex-1 flex flex-col items-center justify-center text-center px-6 py-24 overflow-hidden">
-        {/* Background glow effects */}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-primary/20 rounded-full blur-[120px] -z-10 animate-pulse"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-brand-accent/20 rounded-full blur-[120px] -z-10 animate-pulse" style={{ animationDelay: '1s' }}></div>
+      
+      {/* Top Split Container */}
+      <div className="flex flex-col lg:flex-row w-full flex-1">
+        
+        {/* Hero Section (Left Half) */}
+        <section className="w-full lg:w-1/2 relative flex flex-col items-center justify-center text-center px-6 py-16 lg:py-24 overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-800/50">
+          {/* Background glow effects */}
+          <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-brand-primary/20 rounded-full blur-[100px] -z-10 animate-pulse"></div>
+          <div className="absolute bottom-1/4 right-1/4 w-72 h-72 bg-brand-accent/20 rounded-full blur-[100px] -z-10 animate-pulse" style={{ animationDelay: '1s' }}></div>
 
-        <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-800/50 border border-slate-700/50 text-sm font-medium text-brand-primary shadow-sm backdrop-blur-sm mb-4">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-primary"></span>
-            </span>
-            Premium Home Ownership.
-          </div>
-
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-slate-100 leading-tight">
-            Your Journey to <br className="hidden md:block" />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-primary to-brand-accent">
-              Dream Homeownership
-            </span>
-          </h1>
-
-          <p className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed">
-            Discover flexible pathways to owning your dream home with Cereno Homes. Whether you prefer to Rent-to-Own or Pay-to-Own, we make it simple and secure.
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
-            <button
-              onClick={() => navigate('/client-login')}
-              className="w-full sm:w-auto px-8 py-4 bg-brand-primary hover:bg-brand-primary/90 text-white rounded-2xl font-semibold text-lg transition-all shadow-lg shadow-brand-primary/25 hover:shadow-xl hover:-translate-y-1"
-            >
-              Get Started Now
-            </button>
-            <button
-              onClick={() => navigate('/client-login')}
-              className="w-full sm:w-auto px-8 py-4 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-2xl font-semibold text-lg transition-all backdrop-blur-sm hover:shadow-lg hover:-translate-y-1"
-            >
-              Login to Portal
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Available Properties Section */}
-      <section className="bg-brand-surface py-24 px-6 relative z-10">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-slate-100 mb-4">Available Properties</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">Find your dream home and apply today.</p>
-          </div>
-
-          {isLoading ? (
-            <div className="text-slate-400 text-center">Loading available properties...</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {properties?.length === 0 && (
-                <div className="text-slate-400 col-span-full text-center">No properties are currently available. Check back later!</div>
-              )}
-              {properties?.map((property: any) => (
-                <div key={property.id} className="glass-panel p-6 rounded-2xl border border-slate-700/50 hover:border-brand-primary/50 transition-all flex flex-col">
-                  {property.images && property.images.length > 0 ? (
-                    <div className="h-48 bg-slate-800 rounded-xl mb-4 overflow-hidden">
-                      <img src={property.images[0]} alt="Property" className="w-full h-full object-cover" />
-                    </div>
-                  ) : (
-                    <div className="h-48 bg-slate-800 rounded-xl mb-4 flex items-center justify-center text-slate-500">
-                      No Images Available
-                    </div>
-                  )}
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs px-2 py-1 rounded border bg-green-500/20 text-green-400 border-green-500/30">
-                      AVAILABLE
-                    </span>
-                    <span className="text-sm font-semibold text-brand-secondary">
-                      {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                    </span>
-                  </div>
-                  {property.type && (
-                    <div className="text-xs font-medium text-brand-primary mb-1 uppercase tracking-wider">{property.type}</div>
-                  )}
-                  <h3 className="font-medium text-lg text-slate-100 mb-2">{property.address || 'Address pending'}</h3>
-                  <p className="text-slate-400 text-sm mb-4 line-clamp-3 flex-1">{property.description || 'No description available.'}</p>
-                  
-                  <button 
-                    onClick={() => navigate('/dashboard')}
-                    className="w-full mt-4 bg-brand-primary hover:bg-brand-primary/90 text-white py-3 rounded-xl transition-colors text-sm font-semibold"
-                  >
-                    Apply Now
-                  </button>
-                </div>
-              ))}
+          <div className="max-w-xl mx-auto space-y-6 animate-fade-in">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-800/50 border border-slate-700/50 text-xs font-medium text-brand-primary shadow-sm backdrop-blur-sm mb-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-primary"></span>
+              </span>
+              Premium Home Ownership.
             </div>
-          )}
-        </div>
-      </section>
+
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-100 leading-tight">
+              Your Journey to <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-primary to-brand-accent">
+                Dream Homeownership
+              </span>
+            </h1>
+
+            <p className="text-base md:text-lg text-slate-400 font-light leading-relaxed">
+              Discover flexible pathways to owning your dream home with Cereno Homes. Whether you prefer to Rent-to-Own or Pay-to-Own, we make it simple and secure.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6">
+              <button
+                onClick={() => navigate('/client-login')}
+                className="w-full sm:w-auto px-6 py-3 bg-brand-primary hover:bg-brand-primary/90 text-white rounded-xl font-semibold text-base transition-all shadow-lg shadow-brand-primary/25 hover:shadow-xl hover:-translate-y-1"
+              >
+                Get Started Now
+              </button>
+              <button
+                onClick={() => navigate('/client-login')}
+                className="w-full sm:w-auto px-6 py-3 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl font-semibold text-base transition-all backdrop-blur-sm hover:shadow-lg hover:-translate-y-1"
+              >
+                Login to Portal
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Available Properties Section (Right Half) */}
+        <section className="w-full lg:w-1/2 bg-brand-surface py-16 px-6 relative z-10 lg:h-[calc(100vh-80px)] lg:overflow-y-auto">
+          <div className="max-w-3xl mx-auto">
+            <div className="mb-10 text-center lg:text-left">
+              <h2 className="text-2xl md:text-3xl font-bold text-slate-100 mb-2">Available Properties</h2>
+              <p className="text-slate-400 text-sm">Find your dream home and apply today.</p>
+            </div>
+
+            {isLoading ? (
+              <div className="text-slate-400 text-center lg:text-left py-10">Loading available properties...</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {properties?.length === 0 && (
+                  <div className="text-slate-400 col-span-full py-10 text-center lg:text-left">No properties are currently available. Check back later!</div>
+                )}
+                {properties?.map((property: any) => (
+                  <div key={property.id} className="glass-panel p-5 rounded-2xl border border-slate-700/50 hover:border-brand-primary/50 transition-all flex flex-col">
+                    {property.images && property.images.length > 0 ? (
+                      <div className="h-40 bg-slate-800 rounded-xl mb-4 overflow-hidden">
+                        <img src={property.images[0]} alt="Property" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="h-40 bg-slate-800 rounded-xl mb-4 flex items-center justify-center text-slate-500">
+                        No Images Available
+                      </div>
+                    )}
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="text-[10px] font-bold px-2 py-1 rounded border bg-green-500/20 text-green-400 border-green-500/30">
+                        AVAILABLE
+                      </span>
+                      <span className="text-sm font-bold text-brand-secondary">
+                        {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                      </span>
+                    </div>
+                    {property.type && (
+                      <div className="text-[10px] font-bold text-brand-primary mb-1 uppercase tracking-wider">{property.type}</div>
+                    )}
+                    <h3 className="font-semibold text-base text-slate-100 mb-1">{property.address || 'Address pending'}</h3>
+                    <p className="text-slate-400 text-xs mb-4 line-clamp-2 flex-1">{property.description || 'No description available.'}</p>
+                    
+                    <button 
+                      onClick={() => navigate('/dashboard')}
+                      className="w-full mt-auto bg-brand-primary/10 hover:bg-brand-primary text-brand-primary hover:text-white py-2.5 rounded-xl transition-colors text-sm font-semibold border border-brand-primary/30 hover:border-transparent"
+                    >
+                      Apply Now
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
 
       {/* Features Section */}
       <section className="bg-slate-900/50 border-t border-slate-800/50 py-24 px-6 relative z-10">
