@@ -1,8 +1,15 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { fetchProperties } from '../services/api';
 
 const Landing: React.FC = () => {
   const navigate = useNavigate();
+
+  const { data: properties, isLoading } = useQuery({
+    queryKey: ['publicProperties'],
+    queryFn: fetchProperties,
+  });
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-80px)] w-full">
@@ -46,6 +53,59 @@ const Landing: React.FC = () => {
               Login to Portal
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* Available Properties Section */}
+      <section className="bg-brand-surface py-24 px-6 relative z-10">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-slate-100 mb-4">Available Properties</h2>
+            <p className="text-slate-400 max-w-2xl mx-auto">Find your dream home and apply today.</p>
+          </div>
+
+          {isLoading ? (
+            <div className="text-slate-400 text-center">Loading available properties...</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {properties?.length === 0 && (
+                <div className="text-slate-400 col-span-full text-center">No properties are currently available. Check back later!</div>
+              )}
+              {properties?.map((property: any) => (
+                <div key={property.id} className="glass-panel p-6 rounded-2xl border border-slate-700/50 hover:border-brand-primary/50 transition-all flex flex-col">
+                  {property.images && property.images.length > 0 ? (
+                    <div className="h-48 bg-slate-800 rounded-xl mb-4 overflow-hidden">
+                      <img src={property.images[0]} alt="Property" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="h-48 bg-slate-800 rounded-xl mb-4 flex items-center justify-center text-slate-500">
+                      No Images Available
+                    </div>
+                  )}
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-xs px-2 py-1 rounded border bg-green-500/20 text-green-400 border-green-500/30">
+                      AVAILABLE
+                    </span>
+                    <span className="text-sm font-semibold text-brand-secondary">
+                      {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    </span>
+                  </div>
+                  {property.type && (
+                    <div className="text-xs font-medium text-brand-primary mb-1 uppercase tracking-wider">{property.type}</div>
+                  )}
+                  <h3 className="font-medium text-lg text-slate-100 mb-2">{property.address || 'Address pending'}</h3>
+                  <p className="text-slate-400 text-sm mb-4 line-clamp-3 flex-1">{property.description || 'No description available.'}</p>
+                  
+                  <button 
+                    onClick={() => navigate('/dashboard')}
+                    className="w-full mt-4 bg-brand-primary hover:bg-brand-primary/90 text-white py-3 rounded-xl transition-colors text-sm font-semibold"
+                  >
+                    Apply Now
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
