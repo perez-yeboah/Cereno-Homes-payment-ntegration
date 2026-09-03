@@ -19,6 +19,16 @@ router.post('/initialize', async (req, res) => {
       return res.status(404).json({ error: 'Payment plan not found' });
     }
 
+    // Mock Exchange Rates
+    const EXCHANGE_RATES: Record<string, number> = {
+      'USD': 15.00,
+      'EUR': 16.50,
+      'GHS': 1.00
+    };
+
+    const rate = EXCHANGE_RATES[currency] || 1;
+    const amountGHS = amount * rate;
+
     // Create a pending payment record
     const payment = await prisma.payment.create({
       data: {
@@ -30,11 +40,11 @@ router.post('/initialize', async (req, res) => {
       },
     });
 
-    // Initialize Paystack payment
+    // Initialize Paystack payment (Paystack will charge the calculated GHS amount)
     const paystackData = await initializePayment(
       paymentPlan.client.email,
-      amount,
-      currency,
+      amountGHS,
+      'GHS', // Always initialize with GHS to Paystack since it's the Cedi equivalent
       payment.providerTransactionId,
       callbackUrl,
       { paymentPlanId }

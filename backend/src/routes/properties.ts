@@ -1,6 +1,24 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sendApplicationStatusUpdate, sendProjectUpdate } from '../services/emailService';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+
+// Configure Multer storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadPath = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  }
+});
+const upload = multer({ storage });
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -60,23 +78,28 @@ router.get('/:id/updates', async (req, res) => {
 // ---------------------------------------------------------
 
 // Admin creates a property
-router.post('/', async (req, res) => {
-  const { address, description, images, planTypesAvailable, requiredFormFields, basePrice, currency } = req.body;
+router.post('/', upload.array('images', 10), async (req, res) => {
+  const { address, description, planTypesAvailable, requiredFormFields, basePrice, currency } = req.body;
+  
+  // Get paths for uploaded files
+  const files = req.files as Express.Multer.File[];
+  const images = files ? files.map(file => `/uploads/${file.filename}`) : [];
 
   try {
     const property = await prisma.property.create({
       data: {
         address,
         description,
-        images: images || [],
-        planTypesAvailable: planTypesAvailable || [],
-        requiredFormFields: requiredFormFields || {},
-        basePrice,
+        images,
+        planTypesAvailable: planTypesAvailable ? JSON.parse(planTypesAvailable as string) : [],
+        requiredFormFields: requiredFormFields ? JSON.parse(requiredFormFields as string) : {},
+        basePrice: parseFloat(basePrice as string),
         currency: currency || 'GHS',
       }
     });
     res.status(201).json(property);
   } catch (error) {
+    console.error('Error creating property:', error);
     res.status(500).json({ error: 'Failed to create property' });
   }
 });
