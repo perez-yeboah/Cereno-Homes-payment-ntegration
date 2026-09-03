@@ -70,8 +70,9 @@ const AdminDashboard: React.FC = () => {
       // Refresh properties
       const data = await fetchAdminProperties();
       setProperties(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create property', error);
+      alert(error.response?.data?.error || 'Failed to create property: ' + error.message);
     }
   };
 
