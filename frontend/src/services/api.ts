@@ -80,7 +80,9 @@ export const fetchLiveTransactions = async () => {
 };
 
 export const createProperty = async (data: any) => {
-  const response = await api.post('/properties', data);
+  const isFormData = data instanceof FormData;
+  const config = isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined;
+  const response = await api.post('/properties', data, config);
   return response.data;
 };
 

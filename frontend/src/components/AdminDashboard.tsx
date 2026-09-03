@@ -20,8 +20,9 @@ const AdminDashboard: React.FC = () => {
   const [applications, setApplications] = useState<any[]>([]);
 
   // Form States
-  const [newProperty, setNewProperty] = useState({ address: '', basePrice: '', description: '' });
+  const [newProperty, setNewProperty] = useState({ address: '', basePrice: '', description: '', currency: 'GHS' });
   const [formFields, setFormFields] = useState<string[]>(['']);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [updateData, setUpdateData] = useState({ title: '', content: '' });
 
   const loadApplications = async () => {
@@ -49,14 +50,22 @@ const AdminDashboard: React.FC = () => {
         return acc;
       }, {} as any);
 
-      await createProperty({
-        ...newProperty,
-        basePrice: parseFloat(newProperty.basePrice),
-        requiredFormFields
+      const formData = new FormData();
+      formData.append('address', newProperty.address);
+      formData.append('description', newProperty.description);
+      formData.append('basePrice', newProperty.basePrice);
+      formData.append('currency', newProperty.currency);
+      formData.append('requiredFormFields', JSON.stringify(requiredFormFields));
+      
+      selectedImages.forEach(image => {
+        formData.append('images', image);
       });
+
+      await createProperty(formData);
       setShowPropertyModal(false);
-      setNewProperty({ address: '', basePrice: '', description: '' });
+      setNewProperty({ address: '', basePrice: '', description: '', currency: 'GHS' });
       setFormFields(['']);
+      setSelectedImages([]);
       // Refresh properties
       const data = await fetchAdminProperties();
       setProperties(data);
@@ -180,7 +189,9 @@ const AdminDashboard: React.FC = () => {
                 <span className={`text-xs px-2 py-1 rounded border ${property.status === 'AVAILABLE' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-slate-700/50 text-slate-300 border-slate-600'}`}>
                   {property.status}
                 </span>
-                <span className="text-sm font-semibold text-brand-secondary">GHS {Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span className="text-sm font-semibold text-brand-secondary">
+                  {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                </span>
               </div>
               <h3 className="font-medium text-lg text-slate-100 mb-2">{property.address}</h3>
               <p className="text-slate-400 text-sm mb-4 line-clamp-2">{property.description || 'No description provided.'}</p>
@@ -215,8 +226,36 @@ const AdminDashboard: React.FC = () => {
                 <textarea className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" rows={3} value={newProperty.description} onChange={e => setNewProperty({...newProperty, description: e.target.value})}></textarea>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Base Price (GHS)</label>
-                <input required type="number" className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={newProperty.basePrice} onChange={e => setNewProperty({...newProperty, basePrice: e.target.value})} />
+                <label className="block text-sm font-medium text-slate-300 mb-1">Base Price</label>
+                <div className="flex gap-2">
+                  <select 
+                    className="w-1/3 p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary"
+                    value={newProperty.currency}
+                    onChange={e => setNewProperty({...newProperty, currency: e.target.value})}
+                  >
+                    <option value="GHS">GHS (₵)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                  </select>
+                  <input required type="number" className="w-2/3 p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={newProperty.basePrice} onChange={e => setNewProperty({...newProperty, basePrice: e.target.value})} placeholder="0.00" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Property Images</label>
+                <input 
+                  type="file" 
+                  multiple 
+                  accept="image/*"
+                  className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-400 focus:outline-none focus:border-brand-primary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-brand-primary/20 file:text-brand-primary hover:file:bg-brand-primary/30"
+                  onChange={e => {
+                    if (e.target.files) {
+                      setSelectedImages(Array.from(e.target.files));
+                    }
+                  }}
+                />
+                {selectedImages.length > 0 && (
+                  <p className="mt-2 text-xs text-brand-accent">{selectedImages.length} file(s) selected</p>
+                )}
               </div>
               
               <div className="flex gap-3 justify-end mt-8 pt-4">

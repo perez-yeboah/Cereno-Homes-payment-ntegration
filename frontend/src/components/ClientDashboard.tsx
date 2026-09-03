@@ -255,11 +255,19 @@ const ClientDashboard: React.FC = () => {
             )}
             {properties?.map((property: any) => (
               <div key={property.id} className="glass-panel p-6 rounded-2xl border border-slate-700/50 hover:border-brand-primary/50 transition-all">
-                <div className="h-40 bg-slate-800 rounded-xl mb-4 flex items-center justify-center text-slate-500">
-                  [Property Image]
-                </div>
+                {property.images && property.images.length > 0 ? (
+                  <div className="h-40 bg-slate-800 rounded-xl mb-4 overflow-hidden">
+                    <img src={`http://localhost:3000${property.images[0]}`} alt="Property" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="h-40 bg-slate-800 rounded-xl mb-4 flex items-center justify-center text-slate-500">
+                    [No Image]
+                  </div>
+                )}
                 <h3 className="text-lg font-semibold text-slate-200">{property.address}</h3>
-                <p className="text-brand-accent font-medium mt-1">₵{Number(property.basePrice).toLocaleString()}</p>
+                <p className="text-brand-accent font-medium mt-1">
+                  {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : '₵'}{Number(property.basePrice).toLocaleString()}
+                </p>
                 
                 {(() => {
                   const activeInterest = interests?.find((i: any) => i.propertyId === property.id && ['PENDING', 'APPROVED'].includes(i.status));
