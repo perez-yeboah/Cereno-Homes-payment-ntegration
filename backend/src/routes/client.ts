@@ -5,6 +5,8 @@ import { PrismaClient, PlanType } from '@prisma/client';
 import { z } from 'zod';
 import { authenticateClient, AuthRequest } from '../middleware/auth';
 
+import { initializePayment } from '../services/paystack';
+
 const router = Router();
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_dev_key';
@@ -192,7 +194,10 @@ router.post('/plans', authenticateClient, async (req: AuthRequest, res) => {
 
 const InterestCreateSchema = z.object({
   propertyId: z.string().uuid(),
-  submittedData: z.record(z.string(), z.any())
+  submittedData: z.record(z.string(), z.any()),
+  initialDepositPercentage: z.number().refine(val => val === 30 || val === 50, {
+    message: "Initial deposit must be either 30% or 50%"
+  }).optional()
 });
 
 // Submit Application (Show Interest)
@@ -201,7 +206,10 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
     const clientId = req.user?.id;
     if (!clientId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { propertyId, submittedData } = InterestCreateSchema.parse(req.body);
+    const client = await prisma.client.findUnique({ where: { id: clientId } });
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    const { propertyId, submittedData, initialDepositPercentage } = InterestCreateSchema.parse(req.body);
 
     const property = await prisma.property.findUnique({ where: { id: propertyId } });
     if (!property || property.status !== 'AVAILABLE') {
@@ -220,6 +228,10 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'You already have an active application for this property.' });
     }
 
+    // Default to PAY_TO_OWN if not provided, though the frontend should send it in submittedData
+    const planType = submittedData?.type === 'RENT_TO_OWN' ? 'RENT_TO_OWN' : 'PAY_TO_OWN';
+
+    // 1. Create the PropertyInterest (Application)
     const interest = await prisma.propertyInterest.create({
       data: {
         clientId,
@@ -229,7 +241,66 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
       }
     });
 
-    res.status(201).json(interest);
+    // If a deposit percentage was provided, we generate a payment plan and initialize payment
+    if (initialDepositPercentage) {
+      // 2. Create the PaymentPlan automatically
+      const paymentPlan = await prisma.paymentPlan.create({
+        data: {
+          clientId,
+          propertyId,
+          type: planType,
+          totalAmount: property.basePrice,
+          equityAccrued: 0,
+          currency: property.currency,
+          status: 'ACTIVE',
+          scheduleDetails: {},
+        }
+      });
+
+      // 3. Initialize Paystack Payment for the Deposit
+      const EXCHANGE_RATES: Record<string, number> = {
+        'USD': 15.00,
+        'EUR': 16.50,
+        'GHS': 1.00
+      };
+      const rate = EXCHANGE_RATES[property.currency] || 1;
+      const basePriceNumber = Number(property.basePrice);
+      const amountInOriginalCurrency = basePriceNumber * (initialDepositPercentage / 100);
+      const amountGHS = amountInOriginalCurrency * rate;
+
+      const payment = await prisma.payment.create({
+        data: {
+          provider: 'PAYSTACK',
+          providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+          status: 'PENDING',
+          originalCurrency: property.currency,
+          originalAmount: amountInOriginalCurrency,
+        },
+      });
+
+      const callbackUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/dashboard` : 'http://localhost:5173/dashboard';
+
+      const paystackData = await initializePayment(
+        client.email,
+        amountGHS,
+        'GHS',
+        payment.providerTransactionId,
+        callbackUrl,
+        { paymentPlanId: paymentPlan.id, propertyInterestId: interest.id }
+      );
+
+      return res.status(201).json({
+        interest,
+        paymentPlan,
+        payment: {
+          authorization_url: paystackData.authorization_url,
+          access_code: paystackData.access_code,
+          reference: paystackData.reference
+        }
+      });
+    }
+
+    res.status(201).json({ interest });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Validation failed', details: error.issues });

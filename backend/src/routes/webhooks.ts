@@ -108,6 +108,15 @@ router.post('/paystack', async (req, res) => {
               if (plan.client && plan.client.email) {
                 await sendPaymentReceipt(plan.client.email, settledAmountGHS, data.currency, plan.id);
               }
+
+              // If this was an initial deposit for a property application, automatically approve the interest
+              const propertyInterestId = data.metadata?.propertyInterestId;
+              if (propertyInterestId) {
+                await tx.propertyInterest.update({
+                  where: { id: propertyInterestId },
+                  data: { status: 'APPROVED' }
+                });
+              }
            }
         }
       });

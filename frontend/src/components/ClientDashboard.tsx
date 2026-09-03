@@ -28,9 +28,18 @@ const ClientDashboard: React.FC = () => {
   const [paymentAmount, setPaymentAmount] = useState('');
   
   const [planType, setPlanType] = useState('PAY_TO_OWN');
+  const [initialDepositPercentage, setInitialDepositPercentage] = useState<number>(30);
   
+  const [paymentSummary, setPaymentSummary] = useState<{
+    isOpen: boolean;
+    totalPrice: number;
+    paymentAmount: number;
+    percentage: number;
+    onProceed: () => void;
+  } | null>(null);
+
   // Application Form State
-  const [formData, setFormData] = useState({
+  const [formData] = useState({
     employmentStatus: '',
     monthlyIncome: '',
     comments: ''
@@ -86,18 +95,29 @@ const ClientDashboard: React.FC = () => {
 
   const submitInterestMutation = useMutation({
     mutationFn: async (payload: any = formData) => {
+      // Extract initialDepositPercentage and pass the rest as submittedData
+      const { initialDepositPercentage, ...submittedData } = payload;
+      
       const { data } = await api.post('/client/interests', 
-        { propertyId: selectedProperty.id, submittedData: payload }
+        { 
+          propertyId: selectedProperty.id, 
+          submittedData,
+          initialDepositPercentage 
+        }
       );
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['myInterests'] });
       setSelectedProperty(null);
       setShowApplicationTypeModal(false);
       setSelectedApplicationType(null);
-      setFormData({ employmentStatus: '', monthlyIncome: '', comments: '' });
-      alert("Application submitted successfully! Please wait for admin approval.");
+      
+      if (data.payment && data.payment.authorization_url) {
+        window.location.href = data.payment.authorization_url;
+      } else {
+        alert("Application submitted successfully! Please wait for admin approval.");
+      }
     },
     onError: (error: any) => {
       alert(error.response?.data?.error || "Failed to submit application");
@@ -353,9 +373,53 @@ const ClientDashboard: React.FC = () => {
             </h2>
             <p className="text-slate-400 text-sm mb-6">Applying for {selectedProperty.address}</p>
 
+            {/* Initial Deposit Selection */}
+            <div className="bg-slate-900/50 border border-slate-700/50 p-4 rounded-xl mb-6">
+              <h3 className="text-sm font-medium text-slate-200 mb-2">Select Initial Deposit</h3>
+              <p className="text-xs text-slate-400 mb-3">Your project commences immediately upon paying this deposit.</p>
+              <div className="flex gap-4">
+                <label className={`flex-1 flex items-center p-3 rounded-lg border cursor-pointer transition-colors ${initialDepositPercentage === 30 ? 'bg-brand-primary/20 border-brand-primary text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
+                  <input 
+                    type="radio" 
+                    name="initialDeposit" 
+                    value="30"
+                    checked={initialDepositPercentage === 30}
+                    onChange={() => setInitialDepositPercentage(30)}
+                    className="mr-3 text-brand-primary focus:ring-brand-primary bg-slate-900 border-slate-600"
+                  />
+                  <div>
+                    <span className="font-semibold block">30% Deposit</span>
+                  </div>
+                </label>
+                <label className={`flex-1 flex items-center p-3 rounded-lg border cursor-pointer transition-colors ${initialDepositPercentage === 50 ? 'bg-brand-primary/20 border-brand-primary text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
+                  <input 
+                    type="radio" 
+                    name="initialDeposit" 
+                    value="50"
+                    checked={initialDepositPercentage === 50}
+                    onChange={() => setInitialDepositPercentage(50)}
+                    className="mr-3 text-brand-primary focus:ring-brand-primary bg-slate-900 border-slate-600"
+                  />
+                  <div>
+                    <span className="font-semibold block">50% Deposit</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
             {selectedApplicationType === 'RENT_TO_OWN' ? (
               <RentToOwnForm 
-                onSubmit={(data) => submitInterestMutation.mutate(data)}
+                onSubmit={(data) => {
+                  const totalPrice = Number(selectedProperty.basePrice);
+                  const amount = totalPrice * (initialDepositPercentage / 100);
+                  setPaymentSummary({
+                    isOpen: true,
+                    totalPrice,
+                    paymentAmount: amount,
+                    percentage: initialDepositPercentage,
+                    onProceed: () => submitInterestMutation.mutate({...data, initialDepositPercentage})
+                  });
+                }}
                 onCancel={() => {
                   setSelectedProperty(null);
                   setSelectedApplicationType(null);
@@ -365,7 +429,17 @@ const ClientDashboard: React.FC = () => {
               />
             ) : (
               <PayToOwnForm 
-                onSubmit={(data) => submitInterestMutation.mutate(data)}
+                onSubmit={(data) => {
+                  const totalPrice = Number(selectedProperty.basePrice);
+                  const amount = totalPrice * (initialDepositPercentage / 100);
+                  setPaymentSummary({
+                    isOpen: true,
+                    totalPrice,
+                    paymentAmount: amount,
+                    percentage: initialDepositPercentage,
+                    onProceed: () => submitInterestMutation.mutate({...data, initialDepositPercentage})
+                  });
+                }}
                 onCancel={() => {
                   setSelectedProperty(null);
                   setSelectedApplicationType(null);
@@ -456,7 +530,17 @@ const ClientDashboard: React.FC = () => {
                 <button 
                   onClick={() => {
                     if (Number(paymentAmount) > 0) {
-                      customPaymentMutation.mutate(Number(paymentAmount));
+                      const amount = Number(paymentAmount);
+                      const totalPrice = Number(selectedPlanForLedger.totalAmount);
+                      const percentage = (amount / totalPrice) * 100;
+                      
+                      setPaymentSummary({
+                        isOpen: true,
+                        totalPrice,
+                        paymentAmount: amount,
+                        percentage,
+                        onProceed: () => customPaymentMutation.mutate(amount)
+                      });
                     } else {
                       alert("Please enter a valid amount");
                     }
@@ -500,6 +584,49 @@ const ClientDashboard: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Payment Summary Modal */}
+      {paymentSummary?.isOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] overflow-y-auto">
+          <div className="bg-brand-surface border border-slate-700/50 p-8 rounded-3xl w-full max-w-md shadow-2xl my-8">
+            <h2 className="text-xl font-semibold mb-6 text-slate-100 text-center">Payment Summary</h2>
+            
+            <div className="space-y-4 mb-8">
+              <div className="flex justify-between items-center p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                <span className="text-slate-400">Total Property Price</span>
+                <span className="text-slate-200 font-medium">${paymentSummary.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              
+              <div className="flex justify-between items-center p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                <span className="text-slate-400">Percentage Paying</span>
+                <span className="text-brand-primary font-medium">{paymentSummary.percentage.toFixed(2)}%</span>
+              </div>
+              
+              <div className="flex justify-between items-center p-4 bg-slate-900/80 rounded-xl border border-brand-primary/50">
+                <span className="text-slate-200 font-medium">Amount to Pay</span>
+                <span className="text-xl font-bold text-white">${paymentSummary.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setPaymentSummary(null)}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 rounded-xl transition-colors font-medium"
+                disabled={submitInterestMutation.isPending || customPaymentMutation.isPending}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={paymentSummary.onProceed}
+                disabled={submitInterestMutation.isPending || customPaymentMutation.isPending}
+                className="flex-1 bg-brand-primary hover:bg-brand-primary/90 text-white py-3 rounded-xl transition-colors font-medium flex items-center justify-center gap-2"
+              >
+                {submitInterestMutation.isPending || customPaymentMutation.isPending ? 'Processing...' : 'Pay via Paystack'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
