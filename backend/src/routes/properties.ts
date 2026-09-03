@@ -2,21 +2,23 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { sendApplicationStatusUpdate, sendProjectUpdate } from '../services/emailService';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
 
-// Configure Multer storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = path.join(__dirname, '../../uploads');
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  }
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Configure Multer storage for Cloudinary
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'cereno-properties', // Optional: folder name in cloudinary
+    allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+  } as any, // Cast to any to avoid strict type issues with params
 });
 const upload = multer({ storage });
 
@@ -81,9 +83,9 @@ router.get('/:id/updates', async (req, res) => {
 router.post('/', upload.array('images', 10), async (req, res) => {
   const { address, description, planTypesAvailable, requiredFormFields, basePrice, currency } = req.body;
   
-  // Get paths for uploaded files
+  // Get paths/URLs for uploaded files
   const files = req.files as Express.Multer.File[];
-  const images = files ? files.map(file => `/uploads/${file.filename}`) : [];
+  const images = files ? files.map(file => file.path) : []; // file.path will be the Cloudinary URL
 
   try {
     const property = await prisma.property.create({

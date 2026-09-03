@@ -257,7 +257,7 @@ const ClientDashboard: React.FC = () => {
               <div key={property.id} className="glass-panel p-6 rounded-2xl border border-slate-700/50 hover:border-brand-primary/50 transition-all">
                 {property.images && property.images.length > 0 ? (
                   <div className="h-40 bg-slate-800 rounded-xl mb-4 overflow-hidden">
-                    <img src={`http://localhost:3000${property.images[0]}`} alt="Property" className="w-full h-full object-cover" />
+                    <img src={property.images[0]} alt="Property" className="w-full h-full object-cover" />
                   </div>
                 ) : (
                   <div className="h-40 bg-slate-800 rounded-xl mb-4 flex items-center justify-center text-slate-500">
