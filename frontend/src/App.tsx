@@ -38,6 +38,12 @@ const Navigation = () => {
         Cereno<span className="text-brand-primary">Homes</span>
       </Link>
       <div className="flex gap-6 text-sm font-medium items-center">
+        {!isLoggedIn && (
+          <>
+            <Link to="/client-login" className="text-slate-300 hover:text-white transition-colors">Login</Link>
+            <Link to="/client-login" className="bg-brand-primary hover:bg-brand-primary/90 text-white px-4 py-2 rounded-lg transition-colors">Get Started</Link>
+          </>
+        )}
         {isLoggedIn && <Link to="/dashboard" className="text-slate-300 hover:text-white transition-colors">Client Portal</Link>}
         {isAdmin && <Link to="/admin" className="text-slate-300 hover:text-white transition-colors">Admin Dashboard</Link>}
         {isLoggedIn && (
