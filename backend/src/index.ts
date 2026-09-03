@@ -40,6 +40,14 @@ app.use('/plans', planRoutes);
 app.use('/properties', propertyRoutes);
 app.use('/admin', authenticateToken, adminRoutes);
 
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("GLOBAL ERROR HANDLER:", err);
+  if (err && typeof err === 'object') {
+    console.error("ERROR JSON:", JSON.stringify(err, null, 2));
+  }
+  res.status(500).json({ error: err?.message || 'Server error' });
+});
+
 // Start background cron jobs
 startInvoiceEngine();
 
