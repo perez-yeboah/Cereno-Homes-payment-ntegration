@@ -40,7 +40,7 @@ const Landing: React.FC = () => {
             </h1>
 
             <p className="text-base md:text-lg text-slate-400 font-light leading-relaxed">
-              Discover flexible pathways to owning your dream home or commercial space with Cereno Homes. Whether you prefer to Rent-to-Own or Pay-to-Own, we make it simple and secure.
+              Interested in residential and commercial properties? Discover flexible pathways to owning your dream space with Cereno Homes. Whether you prefer to Rent-to-Own or Pay-to-Own, we make it simple and secure.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6">
