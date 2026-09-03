@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
@@ -24,7 +24,7 @@ const Login: React.FC = () => {
   const onSubmit = async (data: LoginForm) => {
     setApiError(null);
     try {
-      const response = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/auth/login`, data);
+      const response = await api.post(`/auth/login`, data);
       localStorage.setItem('adminToken', response.data.token);
       navigate('/admin');
     } catch (error: any) {

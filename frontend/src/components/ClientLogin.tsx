@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 
 const authSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
@@ -32,10 +32,10 @@ const ClientLogin: React.FC = () => {
           setApiError("Name and phone are required for registration");
           return;
         }
-        const response = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/client/register`, data);
+        const response = await api.post(`/client/register`, data);
         localStorage.setItem('clientToken', response.data.token);
       } else {
-        const response = await axios.post(`${import.meta.env.VITE_API_URL || ''}/api/client/login`, { email: data.email, password: data.password });
+        const response = await api.post(`/client/login`, { email: data.email, password: data.password });
         localStorage.setItem('clientToken', response.data.token);
       }
       navigate('/dashboard');
