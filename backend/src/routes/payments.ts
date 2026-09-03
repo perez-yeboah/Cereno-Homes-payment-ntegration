@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { initializePayment, verifyPayment } from '../services/paystack';
+import { initializePayment, verifyPayment, chargeAuthorization } from '../services/paystack';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -144,6 +144,40 @@ router.post('/verify', async (req, res) => {
                 // sendPaymentReceipt(plan.client.email, settledAmountGHS, data.currency, plan.id);
                 // skipped email in verify to avoid duplicate if webhook also fires
               }
+              
+              // Save reusable card if provided
+              if (data.authorization && data.authorization.reusable) {
+                const {
+                  authorization_code,
+                  last4,
+                  card_type,
+                  exp_month,
+                  exp_year,
+                  bank
+                } = data.authorization;
+                
+                // Only save if it doesn't already exist for this client
+                const existingCard = await tx.savedCard.findFirst({
+                  where: {
+                    clientId: plan.clientId,
+                    authorizationCode: authorization_code
+                  }
+                });
+                
+                if (!existingCard) {
+                  await tx.savedCard.create({
+                    data: {
+                      clientId: plan.clientId,
+                      authorizationCode: authorization_code,
+                      last4,
+                      cardType: card_type,
+                      expMonth: exp_month,
+                      expYear: exp_year,
+                      bank
+                    }
+                  });
+                }
+              }
            }
         }
       });
@@ -154,6 +188,104 @@ router.post('/verify', async (req, res) => {
   } catch (error) {
     console.error('Error verifying payment:', error);
     res.status(500).json({ error: 'Internal server error during verification' });
+  }
+});
+
+});
+
+// Endpoint to fetch saved cards for a client via their payment plan id
+router.get('/saved-cards/:paymentPlanId', async (req, res) => {
+  const { paymentPlanId } = req.params;
+  try {
+    const plan = await prisma.paymentPlan.findUnique({
+      where: { id: paymentPlanId },
+    });
+    
+    if (!plan) return res.status(404).json({ error: 'Payment plan not found' });
+    
+    const savedCards = await prisma.savedCard.findMany({
+      where: { clientId: plan.clientId },
+      select: {
+        id: true,
+        last4: true,
+        cardType: true,
+        expMonth: true,
+        expYear: true,
+        bank: true,
+      }
+    });
+    
+    res.json({ savedCards });
+  } catch (error) {
+    console.error('Error fetching saved cards:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Endpoint to charge a saved card
+router.post('/charge-saved-card', async (req, res) => {
+  const { paymentPlanId, amount, currency = 'GHS', savedCardId } = req.body;
+  
+  try {
+    const plan = await prisma.paymentPlan.findUnique({
+      where: { id: paymentPlanId },
+      include: { client: true }
+    });
+    
+    if (!plan) return res.status(404).json({ error: 'Payment plan not found' });
+    
+    const savedCard = await prisma.savedCard.findUnique({
+      where: { id: savedCardId }
+    });
+    
+    if (!savedCard || savedCard.clientId !== plan.clientId) {
+      return res.status(403).json({ error: 'Unauthorized or invalid saved card' });
+    }
+    
+    // Create a pending payment record
+    const payment = await prisma.payment.create({
+      data: {
+        provider: 'PAYSTACK',
+        providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
+        status: 'PENDING',
+        originalCurrency: currency,
+        originalAmount: amount,
+      },
+    });
+
+    const EXCHANGE_RATES: Record<string, number> = {
+      'USD': 15.00,
+      'EUR': 16.50,
+      'GHS': 1.00
+    };
+    const rate = EXCHANGE_RATES[currency] || 1;
+    const amountGHS = amount * rate;
+    
+    // Charge the authorization
+    const paystackData = await chargeAuthorization(
+      plan.client.email,
+      amountGHS,
+      'GHS',
+      payment.providerTransactionId,
+      savedCard.authorizationCode,
+      { paymentPlanId }
+    );
+    
+    if (paystackData.status === 'success') {
+      // Typically you'd call a verify or handle it inline. For now we can rely on webhook or call verify manually.
+      // But Paystack might also return success directly. 
+      // It's safest to instruct the client to call /verify with the reference.
+      res.json({
+        message: 'Payment charged successfully',
+        status: 'success',
+        reference: paystackData.reference
+      });
+    } else {
+      res.status(400).json({ error: 'Failed to charge card', details: paystackData });
+    }
+  } catch (error) {
+    console.error('Error charging saved card:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

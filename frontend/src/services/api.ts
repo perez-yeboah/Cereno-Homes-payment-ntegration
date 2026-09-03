@@ -32,6 +32,16 @@ export const initializePayment = async (data: any) => {
   return response.data;
 };
 
+export const fetchSavedCards = async (paymentPlanId: string) => {
+  const response = await api.get(`/payments/saved-cards/${paymentPlanId}`);
+  return response.data.savedCards;
+};
+
+export const chargeSavedCard = async (data: any) => {
+  const response = await api.post('/payments/charge-saved-card', data);
+  return response.data;
+};
+
 export const fetchAdminBalances = async () => {
   const response = await api.get('/admin/balances');
   return response.data;

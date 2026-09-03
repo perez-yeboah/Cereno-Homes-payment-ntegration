@@ -46,3 +46,27 @@ export const verifyPayment = async (reference: string) => {
     throw new Error('Failed to verify payment');
   }
 };
+
+export const chargeAuthorization = async (
+  email: string,
+  amountGHS: number,
+  currency: string = 'GHS',
+  reference: string,
+  authorizationCode: string,
+  metadata?: any
+) => {
+  try {
+    const response = await paystackApi.post('/transaction/charge_authorization', {
+      email,
+      amount: Math.round(amountGHS * 100), // Paystack expects amount in kobo/pesewas
+      currency,
+      reference,
+      authorization_code: authorizationCode,
+      metadata,
+    });
+    return response.data.data;
+  } catch (error: any) {
+    console.error('Error charging authorization:', error.response?.data || error.message);
+    throw new Error('Failed to charge authorization');
+  }
+};

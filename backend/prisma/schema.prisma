@@ -23,6 +23,21 @@ model Client {
 
   paymentPlans PaymentPlan[]
   propertyInterests PropertyInterest[]
+  savedCards    SavedCard[]
+}
+
+model SavedCard {
+  id                 String   @id @default(uuid())
+  clientId           String
+  authorizationCode  String
+  last4              String
+  cardType           String?
+  expMonth           String
+  expYear            String
+  bank               String?
+  createdAt          DateTime @default(now())
+
+  client             Client   @relation(fields: [clientId], references: [id])
 }
 
 model Property {
