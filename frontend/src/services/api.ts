@@ -86,6 +86,18 @@ export const createProperty = async (data: any) => {
   return response.data;
 };
 
+export const deleteProperty = async (id: string) => {
+  const response = await api.delete(`/properties/${id}`);
+  return response.data;
+};
+
+export const updateProperty = async (id: string, data: any) => {
+  const isFormData = data instanceof FormData;
+  const config = isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined;
+  const response = await api.put(`/properties/${id}`, data, config);
+  return response.data;
+};
+
 export const sendProjectUpdate = async (propertyId: string, data: { title: string; content: string }) => {
   const response = await api.post(`/properties/${propertyId}/updates`, data);
   return response.data;

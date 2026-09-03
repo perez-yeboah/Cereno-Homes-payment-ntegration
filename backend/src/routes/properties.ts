@@ -186,4 +186,69 @@ router.post('/:id/updates', async (req, res) => {
   }
 });
 
+// Delete Property
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const property = await prisma.property.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: { interests: true, paymentPlans: true }
+        }
+      }
+    });
+
+    if (!property) {
+      return res.status(404).json({ error: 'Property not found' });
+    }
+
+    if (property._count.interests > 0 || property._count.paymentPlans > 0) {
+      return res.status(400).json({ error: 'Cannot delete property with active applications or payment plans.' });
+    }
+
+    await prisma.property.delete({ where: { id } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete property' });
+  }
+});
+
+// Update Property
+router.put('/:id', upload.array('images', 10), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const type = req.body.type as any;
+    const address = req.body.address as any;
+    const description = req.body.description as any;
+    const basePrice = req.body.basePrice as any;
+    const currency = req.body.currency as any;
+    const status = req.body.status as any;
+    
+    const files = req.files as Express.Multer.File[];
+    const imageUrls = files ? files.map(f => f.path) : [];
+
+    const updateData: any = {};
+    if (type !== undefined) updateData.type = type;
+    if (address !== undefined) updateData.address = address;
+    if (description !== undefined) updateData.description = description;
+    if (basePrice !== undefined) updateData.basePrice = parseFloat(basePrice);
+    if (currency !== undefined) updateData.currency = currency;
+    if (status !== undefined) updateData.status = status;
+    
+    if (imageUrls.length > 0) {
+      const existing = await prisma.property.findUnique({ where: { id: id as string }});
+      updateData.images = [...(existing?.images || []), ...imageUrls];
+    }
+
+    const updatedProperty = await prisma.property.update({
+      where: { id: id as string },
+      data: updateData
+    });
+    res.json(updatedProperty);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update property' });
+  }
+});
+
 export default router;

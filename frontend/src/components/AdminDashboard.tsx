@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchAdminBalances, fetchOverdueInvoices, fetchAdminProperties, fetchLiveTransactions, createProperty, sendProjectUpdate, fetchAdminApplications, updateApplicationStatus } from '../services/api';
+import { fetchAdminBalances, fetchOverdueInvoices, fetchAdminProperties, fetchLiveTransactions, createProperty, sendProjectUpdate, fetchAdminApplications, updateApplicationStatus, deleteProperty, updateProperty } from '../services/api';
 
 const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'properties' | 'transactions' | 'applications'>('overview');
@@ -24,6 +24,11 @@ const AdminDashboard: React.FC = () => {
   const [formFields, setFormFields] = useState<string[]>(['']);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [updateData, setUpdateData] = useState({ title: '', content: '' });
+
+  // Edit Property State
+  const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
+  const [editPropertyForm, setEditPropertyForm] = useState({ type: '', address: '', basePrice: '', description: '', currency: 'GHS', status: 'AVAILABLE' });
+  const [editSelectedImages, setEditSelectedImages] = useState<File[]>([]);
 
   const loadApplications = async () => {
     try {
@@ -76,6 +81,34 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleUpdateProperty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPropertyId) return;
+    try {
+      const formData = new FormData();
+      formData.append('type', editPropertyForm.type);
+      if (editPropertyForm.address) formData.append('address', editPropertyForm.address);
+      formData.append('description', editPropertyForm.description);
+      formData.append('basePrice', editPropertyForm.basePrice);
+      formData.append('currency', editPropertyForm.currency);
+      formData.append('status', editPropertyForm.status);
+      
+      editSelectedImages.forEach(image => {
+        formData.append('images', image);
+      });
+
+      await updateProperty(editingPropertyId, formData);
+      setEditingPropertyId(null);
+      setEditSelectedImages([]);
+      const data = await fetchAdminProperties();
+      setProperties(data);
+      alert('Property updated successfully!');
+    } catch (error: any) {
+      console.error('Failed to update property', error);
+      alert(error.response?.data?.error || 'Failed to update property: ' + error.message);
+    }
+  };
+
   const handleSendUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showUpdateModal.propertyId) return;
@@ -96,6 +129,18 @@ const AdminDashboard: React.FC = () => {
     } catch (error) {
       console.error('Failed to update status', error);
       alert('Error updating application status');
+    }
+  };
+
+  const handleDeleteProperty = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this property? This cannot be undone.")) return;
+    try {
+      await deleteProperty(id);
+      const data = await fetchAdminProperties();
+      setProperties(data);
+    } catch (error: any) {
+      console.error('Failed to delete property', error);
+      alert(error.response?.data?.error || 'Failed to delete property');
     }
   };
 
@@ -202,18 +247,110 @@ const AdminDashboard: React.FC = () => {
                 {property.interests?.length || 0} interests • {property.paymentPlans?.length || 0} active plans
               </div>
             </div>
-            
-            <button 
-              onClick={() => setShowUpdateModal({show: true, propertyId: property.id})}
-              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm transition-colors border border-slate-700"
-            >
-              Send Project Update
-            </button>
+            <div className="flex gap-2 mt-4">
+              <button 
+                onClick={() => setShowUpdateModal({show: true, propertyId: property.id})}
+                className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-sm transition-colors border border-slate-700"
+              >
+                Project Update
+              </button>
+              <button 
+                onClick={() => {
+                  setEditingPropertyId(property.id);
+                  setEditPropertyForm({
+                    type: property.type || '',
+                    address: property.address || '',
+                    basePrice: property.basePrice || '',
+                    description: property.description || '',
+                    currency: property.currency || 'GHS',
+                    status: property.status || 'AVAILABLE'
+                  });
+                }}
+                className="py-2 px-3 bg-brand-primary/20 hover:bg-brand-primary/40 text-brand-primary rounded-lg text-sm transition-colors border border-brand-primary/30"
+                title="Edit Property"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              </button>
+              <button 
+                onClick={() => handleDeleteProperty(property.id)}
+                className="py-2 px-3 bg-red-950/40 hover:bg-red-900/60 text-red-400 rounded-lg text-sm transition-colors border border-red-900/50"
+                title="Delete Property"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </button>
+            </div>
           </div>
         ))}
       </div>
 
       {/* Modals */}
+      {editingPropertyId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-xl p-6 rounded-2xl border border-slate-700 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-medium text-slate-100 mb-6">Edit Property</h3>
+            <form onSubmit={handleUpdateProperty} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Status</label>
+                <select 
+                  className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary"
+                  value={editPropertyForm.status}
+                  onChange={e => setEditPropertyForm({...editPropertyForm, status: e.target.value})}
+                >
+                  <option value="AVAILABLE">AVAILABLE</option>
+                  <option value="SOLD">SOLD</option>
+                  <option value="RENTED">RENTED</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Type of Property</label>
+                <input required type="text" className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={editPropertyForm.type} onChange={e => setEditPropertyForm({...editPropertyForm, type: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Property Address</label>
+                <input type="text" className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={editPropertyForm.address} onChange={e => setEditPropertyForm({...editPropertyForm, address: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Description</label>
+                <textarea className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" rows={3} value={editPropertyForm.description} onChange={e => setEditPropertyForm({...editPropertyForm, description: e.target.value})}></textarea>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Base Price</label>
+                <div className="flex gap-2">
+                  <select 
+                    className="w-1/3 p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary"
+                    value={editPropertyForm.currency}
+                    onChange={e => setEditPropertyForm({...editPropertyForm, currency: e.target.value})}
+                  >
+                    <option value="GHS">GHS (₵)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                  </select>
+                  <input required type="number" className="w-2/3 p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={editPropertyForm.basePrice} onChange={e => setEditPropertyForm({...editPropertyForm, basePrice: e.target.value})} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Upload Additional Images</label>
+                <input 
+                  type="file" 
+                  multiple 
+                  accept="image/*"
+                  onChange={e => {
+                    if (e.target.files) {
+                      setEditSelectedImages(Array.from(e.target.files));
+                    }
+                  }}
+                  className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-primary/20 file:text-brand-primary hover:file:bg-brand-primary/30"
+                />
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => { setEditingPropertyId(null); setEditSelectedImages([]); }} className="px-5 py-2 text-slate-300 hover:text-white transition-colors">Cancel</button>
+                <button type="submit" className="bg-brand-primary text-white px-5 py-2 rounded-lg font-medium hover:bg-brand-primary/90 transition shadow-lg shadow-brand-primary/20">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showPropertyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="glass-panel w-full max-w-xl p-6 rounded-2xl border border-slate-700 shadow-2xl relative max-h-[90vh] overflow-y-auto">
