@@ -29,18 +29,18 @@ const Landing: React.FC = () => {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-primary opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-primary"></span>
               </span>
-              Premium Home Ownership.
+              Premium Property Ownership.
             </div>
 
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-100 leading-tight">
               Your Journey to <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-primary to-brand-accent">
-                Dream Homeownership
+                Dream Property Ownership
               </span>
             </h1>
 
             <p className="text-base md:text-lg text-slate-400 font-light leading-relaxed">
-              Discover flexible pathways to owning your dream home with Cereno Homes. Whether you prefer to Rent-to-Own or Pay-to-Own, we make it simple and secure.
+              Discover flexible pathways to owning your dream home or commercial space with Cereno Homes. Whether you prefer to Rent-to-Own or Pay-to-Own, we make it simple and secure.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6">
@@ -65,7 +65,7 @@ const Landing: React.FC = () => {
           <div className="max-w-3xl mx-auto">
             <div className="mb-10 text-center lg:text-left">
               <h2 className="text-2xl md:text-3xl font-bold text-slate-100 mb-2">Available Properties</h2>
-              <p className="text-slate-400 text-sm">Find your dream home and apply today.</p>
+              <p className="text-slate-400 text-sm">Find your dream home or commercial property and apply today.</p>
             </div>
 
             {isLoading ? (
@@ -132,7 +132,7 @@ const Landing: React.FC = () => {
               </div>
               <h3 className="text-xl font-semibold text-slate-200 mb-3">Premium Properties</h3>
               <p className="text-slate-400 leading-relaxed">
-                Browse our curated selection of high-quality homes in prime locations, built with exceptional standards.
+                Browse our curated selection of high-quality homes and commercial spaces in prime locations, built with exceptional standards.
               </p>
             </div>
 
@@ -158,7 +158,7 @@ const Landing: React.FC = () => {
               </div>
               <h3 className="text-xl font-semibold text-slate-200 mb-3">Secure & Transparent</h3>
               <p className="text-slate-400 leading-relaxed">
-                Track your payments, manage your plans, and stay updated with your homeownership progress in a secure portal.
+                Track your payments, manage your plans, and stay updated with your property ownership progress in a secure portal.
               </p>
             </div>
           </div>
