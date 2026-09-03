@@ -261,13 +261,22 @@ const ClientDashboard: React.FC = () => {
                   </div>
                 ) : (
                   <div className="h-40 bg-slate-800 rounded-xl mb-4 flex items-center justify-center text-slate-500">
-                    [No Image]
+                    No Images Available
                   </div>
                 )}
-                <h3 className="text-lg font-semibold text-slate-200">{property.address}</h3>
-                <p className="text-brand-accent font-medium mt-1">
-                  {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : '₵'}{Number(property.basePrice).toLocaleString()}
-                </p>
+                <div className="flex justify-between items-start mb-2">
+                  <span className={`text-xs px-2 py-1 rounded border ${property.status === 'AVAILABLE' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-slate-700/50 text-slate-300 border-slate-600'}`}>
+                    {property.status}
+                  </span>
+                  <span className="text-sm font-semibold text-brand-secondary">
+                    {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                  </span>
+                </div>
+                {property.type && (
+                  <div className="text-xs font-medium text-brand-primary mb-1 uppercase tracking-wider">{property.type}</div>
+                )}
+                <h3 className="font-medium text-lg text-slate-100 mb-2">{property.address || 'Address pending'}</h3>
+                <p className="text-slate-400 text-sm mb-4 line-clamp-2">{property.description || 'No description available.'}</p>
                 
                 {(() => {
                   const activeInterest = interests?.find((i: any) => i.propertyId === property.id && ['PENDING', 'APPROVED'].includes(i.status));

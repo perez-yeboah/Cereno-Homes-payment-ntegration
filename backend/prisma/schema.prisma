@@ -27,7 +27,8 @@ model Client {
 
 model Property {
   id                 String   @id @default(uuid())
-  address            String
+  address            String?
+  type               String?
   description        String?
   images             String[]
   planTypesAvailable PlanType[]

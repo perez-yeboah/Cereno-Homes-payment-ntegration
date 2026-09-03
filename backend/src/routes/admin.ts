@@ -159,7 +159,7 @@ router.get('/receipt/:paymentId', async (req, res) => {
 
     generateReceiptPDF(res, {
       clientName: plan.client.name,
-      propertyAddress: plan.property.address,
+      propertyAddress: plan.property.address || 'Unknown Address',
       paymentId: payment.id,
       amountGHS: Number(payment.settledAmount || payment.originalAmount),
       originalCurrency: payment.originalCurrency,

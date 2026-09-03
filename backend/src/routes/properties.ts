@@ -81,7 +81,7 @@ router.get('/:id/updates', async (req, res) => {
 
 // Admin creates a property
 router.post('/', upload.array('images', 10), async (req, res) => {
-  const { address, description, planTypesAvailable, requiredFormFields, basePrice, currency } = req.body;
+  const { address, type, description, planTypesAvailable, requiredFormFields, basePrice, currency } = req.body;
   
   // Get paths/URLs for uploaded files
   const files = req.files as Express.Multer.File[];
@@ -90,7 +90,8 @@ router.post('/', upload.array('images', 10), async (req, res) => {
   try {
     const property = await prisma.property.create({
       data: {
-        address,
+        address: address || null,
+        type: type || null,
         description,
         images,
         planTypesAvailable: planTypesAvailable ? JSON.parse(planTypesAvailable as string) : [],
@@ -132,7 +133,7 @@ router.post('/interests/:id/status', async (req, res) => {
     });
 
     if (interest.client?.email) {
-      await sendApplicationStatusUpdate(interest.client.email, status, interest.property.address);
+      await sendApplicationStatusUpdate(interest.client.email, status, interest.property.address || 'Unknown Address');
     }
 
     res.json(interest);

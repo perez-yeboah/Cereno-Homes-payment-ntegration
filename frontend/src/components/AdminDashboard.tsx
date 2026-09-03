@@ -20,7 +20,7 @@ const AdminDashboard: React.FC = () => {
   const [applications, setApplications] = useState<any[]>([]);
 
   // Form States
-  const [newProperty, setNewProperty] = useState({ address: '', basePrice: '', description: '', currency: 'GHS' });
+  const [newProperty, setNewProperty] = useState({ type: '', address: '', basePrice: '', description: '', currency: 'GHS' });
   const [formFields, setFormFields] = useState<string[]>(['']);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [updateData, setUpdateData] = useState({ title: '', content: '' });
@@ -51,7 +51,8 @@ const AdminDashboard: React.FC = () => {
       }, {} as any);
 
       const formData = new FormData();
-      formData.append('address', newProperty.address);
+      formData.append('type', newProperty.type);
+      if (newProperty.address) formData.append('address', newProperty.address);
       formData.append('description', newProperty.description);
       formData.append('basePrice', newProperty.basePrice);
       formData.append('currency', newProperty.currency);
@@ -63,7 +64,7 @@ const AdminDashboard: React.FC = () => {
 
       await createProperty(formData);
       setShowPropertyModal(false);
-      setNewProperty({ address: '', basePrice: '', description: '', currency: 'GHS' });
+      setNewProperty({ type: '', address: '', basePrice: '', description: '', currency: 'GHS' });
       setFormFields(['']);
       setSelectedImages([]);
       // Refresh properties
@@ -218,8 +219,12 @@ const AdminDashboard: React.FC = () => {
             <h3 className="text-xl font-medium text-slate-100 mb-6">Create New Property</h3>
             <form onSubmit={handleCreateProperty} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Property Address</label>
-                <input required type="text" className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={newProperty.address} onChange={e => setNewProperty({...newProperty, address: e.target.value})} />
+                <label className="block text-sm font-medium text-slate-300 mb-1">Type of Property</label>
+                <input required type="text" className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={newProperty.type} onChange={e => setNewProperty({...newProperty, type: e.target.value})} placeholder="e.g. 1-Bedroom Apartment" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Property Address (Optional)</label>
+                <input type="text" className="w-full p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={newProperty.address} onChange={e => setNewProperty({...newProperty, address: e.target.value})} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">Description</label>
