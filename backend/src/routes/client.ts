@@ -5,7 +5,7 @@ import { PrismaClient, PlanType } from '@prisma/client';
 import { z } from 'zod';
 import { authenticateClient, AuthRequest } from '../middleware/auth';
 
-import { initializePayment } from '../services/paystack';
+import { PaymentFactory } from '../services/paymentFactory';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -197,7 +197,8 @@ const InterestCreateSchema = z.object({
   submittedData: z.record(z.string(), z.any()),
   initialDepositPercentage: z.number().refine(val => val === 30 || val === 50, {
     message: "Initial deposit must be either 30% or 50%"
-  }).optional()
+  }).optional(),
+  provider: z.string().optional().default('paystack')
 });
 
 // Submit Application (Show Interest)
@@ -209,7 +210,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
     const client = await prisma.client.findUnique({ where: { id: clientId } });
     if (!client) return res.status(404).json({ error: 'Client not found' });
 
-    const { propertyId, submittedData, initialDepositPercentage } = InterestCreateSchema.parse(req.body);
+    const { propertyId, submittedData, initialDepositPercentage, provider } = InterestCreateSchema.parse(req.body);
 
     const property = await prisma.property.findUnique({ where: { id: propertyId } });
     if (!property || property.status !== 'AVAILABLE') {
@@ -270,7 +271,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
 
       const payment = await prisma.payment.create({
         data: {
-          provider: 'PAYSTACK',
+          provider: provider.toUpperCase(),
           providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`,
           status: 'PENDING',
           originalCurrency: property.currency,
@@ -280,7 +281,8 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
 
       const callbackUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/dashboard` : 'http://localhost:5173/dashboard';
 
-      const paystackData = await initializePayment(
+      const paymentProvider = PaymentFactory.getProvider(provider);
+      const paymentData = await paymentProvider.initializePayment(
         client.email,
         amountGHS,
         'GHS',
@@ -293,9 +295,9 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
         interest,
         paymentPlan,
         payment: {
-          authorization_url: paystackData.authorization_url,
-          access_code: paystackData.access_code,
-          reference: paystackData.reference
+          authorization_url: paymentData.authorization_url || paymentData.checkoutUrl,
+          access_code: paymentData.access_code,
+          reference: paymentData.reference || payment.providerTransactionId
         }
       });
     }

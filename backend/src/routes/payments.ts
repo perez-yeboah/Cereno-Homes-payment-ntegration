@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { initializePayment, verifyPayment, chargeAuthorization } from '../services/paystack';
+import { PaymentFactory } from '../services/paymentFactory';
 
 const router = Router();
 const prisma = new PrismaClient();
 
 // In a real app, this would be authenticated
 router.post('/initialize', async (req, res) => {
-  const { paymentPlanId, amount, currency = 'GHS', channel, callbackUrl } = req.body;
+  const { paymentPlanId, amount, currency = 'GHS', channel, callbackUrl, provider = 'paystack' } = req.body;
 
   try {
     const paymentPlan = await prisma.paymentPlan.findUnique({
@@ -32,7 +32,7 @@ router.post('/initialize', async (req, res) => {
     // Create a pending payment record
     const payment = await prisma.payment.create({
       data: {
-        provider: 'PAYSTACK',
+        provider: provider.toUpperCase(),
         providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`, // Temporary reference, real one should be robust
         status: 'PENDING',
         originalCurrency: currency,
@@ -40,11 +40,12 @@ router.post('/initialize', async (req, res) => {
       },
     });
 
-    // Initialize Paystack payment (Paystack will charge the calculated GHS amount)
-    const paystackData = await initializePayment(
+    // Initialize payment using the selected provider factory
+    const paymentProvider = PaymentFactory.getProvider(provider);
+    const paymentData = await paymentProvider.initializePayment(
       paymentPlan.client.email,
       amountGHS,
-      'GHS', // Always initialize with GHS to Paystack since it's the Cedi equivalent
+      'GHS', 
       payment.providerTransactionId,
       callbackUrl,
       { paymentPlanId }
@@ -52,9 +53,9 @@ router.post('/initialize', async (req, res) => {
 
     res.json({
       message: 'Payment initialized successfully',
-      authorization_url: paystackData.authorization_url,
-      access_code: paystackData.access_code,
-      reference: paystackData.reference,
+      authorization_url: paymentData.authorization_url || paymentData.checkoutUrl, // accommodate different provider response shapes if needed
+      access_code: paymentData.access_code,
+      reference: paymentData.reference || payment.providerTransactionId,
     });
   } catch (error: any) {
     console.error('Payment initialization error:', error);
@@ -63,11 +64,12 @@ router.post('/initialize', async (req, res) => {
 });
 
 router.post('/verify', async (req, res) => {
-  const { reference } = req.body;
+  const { reference, provider = 'paystack' } = req.body;
   if (!reference) return res.status(400).json({ error: 'Reference is required' });
 
   try {
-    const data = await verifyPayment(reference);
+    const paymentProvider = PaymentFactory.getProvider(provider);
+    const data = await paymentProvider.verifyPayment(reference);
     
     if (data.status === 'success') {
       await prisma.$transaction(async (tx) => {
@@ -191,8 +193,6 @@ router.post('/verify', async (req, res) => {
   }
 });
 
-});
-
 // Endpoint to fetch saved cards for a client via their payment plan id
 router.get('/saved-cards/:paymentPlanId', async (req, res) => {
   const { paymentPlanId } = req.params;
@@ -245,7 +245,7 @@ router.post('/charge-saved-card', async (req, res) => {
     // Create a pending payment record
     const payment = await prisma.payment.create({
       data: {
-        provider: 'PAYSTACK',
+        provider: 'PAYSTACK', // charge authorization is usually paystack specific here unless cellulant supports it
         providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
         status: 'PENDING',
         originalCurrency: currency,
@@ -262,7 +262,11 @@ router.post('/charge-saved-card', async (req, res) => {
     const amountGHS = amount * rate;
     
     // Charge the authorization
-    const paystackData = await chargeAuthorization(
+    const paymentProvider = PaymentFactory.getProvider('paystack');
+    if (!paymentProvider.chargeAuthorization) {
+       return res.status(400).json({ error: 'Provider does not support charging saved cards' });
+    }
+    const paystackData = await paymentProvider.chargeAuthorization(
       plan.client.email,
       amountGHS,
       'GHS',
