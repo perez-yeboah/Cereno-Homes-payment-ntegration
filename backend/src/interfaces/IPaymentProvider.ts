@@ -1,7 +1,7 @@
 export interface IPaymentProvider {
   initializePayment(
     email: string,
-    amountGHS: number,
+    amount: number,
     currency: string,
     reference: string,
     callbackUrl?: string,
@@ -12,7 +12,7 @@ export interface IPaymentProvider {
 
   chargeAuthorization?(
     email: string,
-    amountGHS: number,
+    amount: number,
     currency: string,
     reference: string,
     authorizationCode: string,

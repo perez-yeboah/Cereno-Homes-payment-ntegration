@@ -79,8 +79,8 @@ const ClientDashboard: React.FC = () => {
       const result = await initializePayment({
         paymentPlanId: selectedPlanForLedger.id,
         amount,
-        currency: 'GHS',
-        channel: ['card', 'mobile_money'],
+        currency: selectedPlanForLedger.currency || 'USD',
+        provider: 'stripe',
         callbackUrl: `${window.location.origin}/payment/verify`
       });
       return result;
@@ -136,8 +136,8 @@ const ClientDashboard: React.FC = () => {
         const result = await initializePayment({
           paymentPlanId: data.plan.id,
           amount: Number(data.invoice.amountDue),
-          currency: 'GHS',
-          channel: ['card', 'mobile_money'],
+          currency: data.plan.currency || 'USD',
+          provider: 'stripe',
           callbackUrl: `${window.location.origin}/payment/verify`
         });
         window.location.href = result.authorization_url;
@@ -620,7 +620,7 @@ const ClientDashboard: React.FC = () => {
                 disabled={submitInterestMutation.isPending || customPaymentMutation.isPending}
                 className="flex-1 bg-brand-primary hover:bg-brand-primary/90 text-white py-3 rounded-xl transition-colors font-medium flex items-center justify-center gap-2"
               >
-                {submitInterestMutation.isPending || customPaymentMutation.isPending ? 'Processing...' : 'Pay via Paystack'}
+                {submitInterestMutation.isPending || customPaymentMutation.isPending ? 'Processing...' : 'Pay via Stripe'}
               </button>
             </div>
           </div>

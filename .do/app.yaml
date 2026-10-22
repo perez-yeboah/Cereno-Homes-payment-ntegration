@@ -14,7 +14,10 @@ services:
       - key: DATABASE_URL
         scope: RUN_AND_BUILD_TIME
         type: SECRET
-      - key: PAYSTACK_SECRET_KEY
+      - key: STRIPE_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: STRIPE_WEBHOOK_SECRET
         scope: RUN_TIME
         type: SECRET
       - key: JWT_SECRET

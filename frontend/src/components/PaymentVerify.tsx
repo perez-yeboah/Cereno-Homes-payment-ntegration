@@ -8,18 +8,19 @@ const PaymentVerify: React.FC = () => {
   const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
   const [message, setMessage] = useState('Verifying your payment...');
 
-  const reference = searchParams.get('reference') || searchParams.get('trxref');
+  const sessionId = searchParams.get('session_id');
+  const reference = searchParams.get('reference') || searchParams.get('trxref') || sessionId;
 
   useEffect(() => {
-    if (!reference) {
+    if (!reference && !sessionId) {
       setStatus('error');
-      setMessage('No payment reference found.');
+      setMessage('No payment reference or session ID found.');
       return;
     }
 
     const verify = async () => {
       try {
-        await verifyPayment(reference);
+        await verifyPayment(reference, sessionId);
         setStatus('success');
         setMessage('Payment successful! Your transaction has been recorded.');
         
@@ -35,7 +36,7 @@ const PaymentVerify: React.FC = () => {
     };
 
     verify();
-  }, [reference, navigate]);
+  }, [reference, sessionId, navigate]);
 
   return (
     <div className="min-h-screen bg-brand-dark bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-slate-900 via-brand-dark to-black flex items-center justify-center p-8">

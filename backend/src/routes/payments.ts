@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 
 // In a real app, this would be authenticated
 router.post('/initialize', async (req, res) => {
-  const { paymentPlanId, amount, currency = 'GHS', channel, callbackUrl, provider = 'paystack' } = req.body;
+  const { paymentPlanId, amount, currency = 'USD', channel, callbackUrl, provider = 'stripe' } = req.body;
 
   try {
     const paymentPlan = await prisma.paymentPlan.findUnique({
@@ -19,33 +19,39 @@ router.post('/initialize', async (req, res) => {
       return res.status(404).json({ error: 'Payment plan not found' });
     }
 
-    // Mock Exchange Rates
-    const EXCHANGE_RATES: Record<string, number> = {
-      'USD': 15.00,
-      'EUR': 16.50,
-      'GHS': 1.00
-    };
+    const effectiveCurrency = currency || paymentPlan.currency || 'USD';
+    let chargeAmount = amount;
+    let chargeCurrency = effectiveCurrency;
 
-    const rate = EXCHANGE_RATES[currency] || 1;
-    const amountGHS = amount * rate;
+    // If using Paystack legacy, convert to GHS
+    if (provider.toLowerCase() === 'paystack') {
+      const EXCHANGE_RATES: Record<string, number> = {
+        'USD': 15.00,
+        'EUR': 16.50,
+        'GHS': 1.00
+      };
+      const rate = EXCHANGE_RATES[effectiveCurrency] || 1;
+      chargeAmount = amount * rate;
+      chargeCurrency = 'GHS';
+    }
 
     // Create a pending payment record
     const payment = await prisma.payment.create({
       data: {
         provider: provider.toUpperCase(),
-        providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`, // Temporary reference, real one should be robust
+        providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`,
         status: 'PENDING',
-        originalCurrency: currency,
+        originalCurrency: effectiveCurrency,
         originalAmount: amount,
       },
     });
 
-    // Initialize payment using the selected provider factory
+    // Initialize payment using the selected provider factory (Stripe by default)
     const paymentProvider = PaymentFactory.getProvider(provider);
     const paymentData = await paymentProvider.initializePayment(
       paymentPlan.client.email,
-      amountGHS,
-      'GHS', 
+      chargeAmount,
+      chargeCurrency, 
       payment.providerTransactionId,
       callbackUrl,
       { paymentPlanId }
@@ -53,39 +59,48 @@ router.post('/initialize', async (req, res) => {
 
     res.json({
       message: 'Payment initialized successfully',
-      authorization_url: paymentData.authorization_url || paymentData.checkoutUrl, // accommodate different provider response shapes if needed
-      access_code: paymentData.access_code,
+      authorization_url: paymentData.authorization_url || paymentData.checkoutUrl,
+      access_code: paymentData.access_code || paymentData.sessionId,
+      sessionId: paymentData.sessionId,
       reference: paymentData.reference || payment.providerTransactionId,
     });
   } catch (error: any) {
     console.error('Payment initialization error:', error);
-    res.status(500).json({ error: 'Internal server error during payment initialization' });
+    res.status(500).json({ error: error.message || 'Internal server error during payment initialization' });
   }
 });
 
 router.post('/verify', async (req, res) => {
-  const { reference, provider = 'paystack' } = req.body;
-  if (!reference) return res.status(400).json({ error: 'Reference is required' });
+  const { reference, session_id, provider = 'stripe' } = req.body;
+  const lookupRef = session_id || reference;
+  if (!lookupRef) return res.status(400).json({ error: 'Reference or session_id is required' });
 
   try {
     const paymentProvider = PaymentFactory.getProvider(provider);
-    const data = await paymentProvider.verifyPayment(reference);
+    const data = await paymentProvider.verifyPayment(lookupRef);
     
     if (data.status === 'success') {
       await prisma.$transaction(async (tx) => {
-        const payment = await tx.payment.findUnique({
-          where: { providerTransactionId: reference },
+        const payment = await tx.payment.findFirst({
+          where: {
+            OR: [
+              { providerTransactionId: reference },
+              { providerTransactionId: session_id },
+              { providerTransactionId: data.reference },
+              { providerTransactionId: data.sessionId },
+            ].filter(Boolean) as any,
+          },
         });
         
         if (!payment || payment.status === 'SUCCESS') return;
         
-        const settledAmountGHS = data.amount / 100;
+        const settledAmount = data.amount / 100;
         
         await tx.payment.update({
           where: { id: payment.id },
           data: { 
             status: 'SUCCESS',
-            settledAmount: settledAmountGHS,
+            settledAmount: settledAmount,
             settledCurrency: data.currency
           }
         });
@@ -99,18 +114,18 @@ router.post('/verify', async (req, res) => {
            });
            
            if (plan) {
-              let equityPortion = settledAmountGHS;
+              let equityPortion = settledAmount;
               let rentPortion = 0;
               
               if (plan.type === 'RENT_TO_OWN') {
                 const schedule = plan.scheduleDetails as any;
                 const rentDeduction = schedule?.rentDeductionAmount || 0;
                 
-                if (settledAmountGHS > rentDeduction) {
+                if (settledAmount > rentDeduction) {
                   rentPortion = rentDeduction;
-                  equityPortion = settledAmountGHS - rentDeduction;
+                  equityPortion = settledAmount - rentDeduction;
                 } else {
-                  rentPortion = settledAmountGHS;
+                  rentPortion = settledAmount;
                   equityPortion = 0;
                 }
                 
@@ -130,7 +145,7 @@ router.post('/verify', async (req, res) => {
                 data: {
                   paymentPlanId,
                   type: 'PAYMENT',
-                  amountGHS: settledAmountGHS,
+                  amountGHS: settledAmount,
                   paymentId: payment.id,
                 }
               });
@@ -143,7 +158,7 @@ router.post('/verify', async (req, res) => {
               }
               
               if (plan.client && plan.client.email) {
-                // sendPaymentReceipt(plan.client.email, settledAmountGHS, data.currency, plan.id);
+                // sendPaymentReceipt(plan.client.email, settledAmount, data.currency, plan.id);
                 // skipped email in verify to avoid duplicate if webhook also fires
               }
               
@@ -224,7 +239,7 @@ router.get('/saved-cards/:paymentPlanId', async (req, res) => {
 
 // Endpoint to charge a saved card
 router.post('/charge-saved-card', async (req, res) => {
-  const { paymentPlanId, amount, currency = 'GHS', savedCardId } = req.body;
+  const { paymentPlanId, amount, currency = 'USD', savedCardId, provider = 'stripe' } = req.body;
   
   try {
     const plan = await prisma.paymentPlan.findUnique({
@@ -245,7 +260,7 @@ router.post('/charge-saved-card', async (req, res) => {
     // Create a pending payment record
     const payment = await prisma.payment.create({
       data: {
-        provider: 'PAYSTACK', // charge authorization is usually paystack specific here unless cellulant supports it
+        provider: provider.toUpperCase(),
         providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
         status: 'PENDING',
         originalCurrency: currency,
@@ -253,43 +268,31 @@ router.post('/charge-saved-card', async (req, res) => {
       },
     });
 
-    const EXCHANGE_RATES: Record<string, number> = {
-      'USD': 15.00,
-      'EUR': 16.50,
-      'GHS': 1.00
-    };
-    const rate = EXCHANGE_RATES[currency] || 1;
-    const amountGHS = amount * rate;
-    
-    // Charge the authorization
-    const paymentProvider = PaymentFactory.getProvider('paystack');
+    const paymentProvider = PaymentFactory.getProvider(provider);
     if (!paymentProvider.chargeAuthorization) {
        return res.status(400).json({ error: 'Provider does not support charging saved cards' });
     }
-    const paystackData = await paymentProvider.chargeAuthorization(
+    const chargeData = await paymentProvider.chargeAuthorization(
       plan.client.email,
-      amountGHS,
-      'GHS',
+      amount,
+      currency,
       payment.providerTransactionId,
       savedCard.authorizationCode,
       { paymentPlanId }
     );
     
-    if (paystackData.status === 'success') {
-      // Typically you'd call a verify or handle it inline. For now we can rely on webhook or call verify manually.
-      // But Paystack might also return success directly. 
-      // It's safest to instruct the client to call /verify with the reference.
+    if (chargeData.status === 'success') {
       res.json({
         message: 'Payment charged successfully',
         status: 'success',
-        reference: paystackData.reference
+        reference: chargeData.reference
       });
     } else {
-      res.status(400).json({ error: 'Failed to charge card', details: paystackData });
+      res.status(400).json({ error: 'Failed to charge card', details: chargeData });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error charging saved card:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 

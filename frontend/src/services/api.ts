@@ -123,8 +123,12 @@ export const updateApplicationStatus = async (id: string, status: string) => {
   return response.data;
 };
 
-export const verifyPayment = async (reference: string) => {
-  const response = await api.post('/payments/verify', { reference });
+export const verifyPayment = async (reference?: string | null, sessionId?: string | null) => {
+  const response = await api.post('/payments/verify', { 
+    reference, 
+    session_id: sessionId, 
+    provider: 'stripe' 
+  });
   return response.data;
 };
 

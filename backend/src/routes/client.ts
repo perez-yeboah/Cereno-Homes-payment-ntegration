@@ -198,7 +198,7 @@ const InterestCreateSchema = z.object({
   initialDepositPercentage: z.number().refine(val => val === 30 || val === 50, {
     message: "Initial deposit must be either 30% or 50%"
   }).optional(),
-  provider: z.string().optional().default('paystack')
+  provider: z.string().optional().default('stripe')
 });
 
 // Submit Application (Show Interest)
@@ -258,16 +258,23 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
         }
       });
 
-      // 3. Initialize Paystack Payment for the Deposit
-      const EXCHANGE_RATES: Record<string, number> = {
-        'USD': 15.00,
-        'EUR': 16.50,
-        'GHS': 1.00
-      };
-      const rate = EXCHANGE_RATES[property.currency] || 1;
+      // 3. Initialize Payment for the Deposit (Stripe by default)
       const basePriceNumber = Number(property.basePrice);
       const amountInOriginalCurrency = basePriceNumber * (initialDepositPercentage / 100);
-      const amountGHS = amountInOriginalCurrency * rate;
+
+      let chargeAmount = amountInOriginalCurrency;
+      let chargeCurrency = property.currency;
+
+      if (provider.toLowerCase() === 'paystack') {
+        const EXCHANGE_RATES: Record<string, number> = {
+          'USD': 15.00,
+          'EUR': 16.50,
+          'GHS': 1.00
+        };
+        const rate = EXCHANGE_RATES[property.currency] || 1;
+        chargeAmount = amountInOriginalCurrency * rate;
+        chargeCurrency = 'GHS';
+      }
 
       const payment = await prisma.payment.create({
         data: {
@@ -279,16 +286,20 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
         },
       });
 
-      const callbackUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/dashboard` : 'http://localhost:5173/dashboard';
+      const callbackUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/payment/verify` : 'http://localhost:5173/payment/verify';
 
       const paymentProvider = PaymentFactory.getProvider(provider);
       const paymentData = await paymentProvider.initializePayment(
         client.email,
-        amountGHS,
-        'GHS',
+        chargeAmount,
+        chargeCurrency,
         payment.providerTransactionId,
         callbackUrl,
-        { paymentPlanId: paymentPlan.id, propertyInterestId: interest.id }
+        { 
+          paymentPlanId: paymentPlan.id, 
+          propertyInterestId: interest.id,
+          description: `Cereno Homes - Initial Deposit (${initialDepositPercentage}%)` 
+        }
       );
 
       return res.status(201).json({
@@ -296,7 +307,8 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
         paymentPlan,
         payment: {
           authorization_url: paymentData.authorization_url || paymentData.checkoutUrl,
-          access_code: paymentData.access_code,
+          access_code: paymentData.access_code || paymentData.sessionId,
+          sessionId: paymentData.sessionId,
           reference: paymentData.reference || payment.providerTransactionId
         }
       });

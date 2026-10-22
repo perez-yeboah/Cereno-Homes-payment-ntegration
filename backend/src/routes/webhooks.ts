@@ -1,14 +1,214 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import Stripe from 'stripe';
 import { PrismaClient } from '@prisma/client';
 import { sendPaymentReceipt } from '../services/emailService';
 
 const router = Router();
 const prisma = new PrismaClient();
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_placeholder';
 
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_placeholder';
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+
+const stripe = new Stripe(STRIPE_SECRET_KEY);
+
+// Helper function to handle successful payment idempotently across all providers
+async function handleSuccessfulPayment(tx: any, {
+  reference,
+  sessionId,
+  amount,
+  currency,
+  paymentPlanId,
+  propertyInterestId,
+  authorization
+}: {
+  reference: string;
+  sessionId?: string;
+  amount: number;
+  currency: string;
+  paymentPlanId?: string;
+  propertyInterestId?: string;
+  authorization?: any;
+}) {
+  const payment = await tx.payment.findFirst({
+    where: {
+      OR: [
+        { providerTransactionId: reference },
+        sessionId ? { providerTransactionId: sessionId } : undefined
+      ].filter(Boolean) as any
+    }
+  });
+
+  // Idempotency check: if payment doesn't exist or is already processed, skip
+  if (!payment || payment.status === 'SUCCESS') {
+    return;
+  }
+
+  await tx.payment.update({
+    where: { id: payment.id },
+    data: {
+      status: 'SUCCESS',
+      settledAmount: amount,
+      settledCurrency: currency
+    }
+  });
+
+  if (paymentPlanId) {
+    const plan = await tx.paymentPlan.findUnique({
+      where: { id: paymentPlanId },
+      include: { client: true }
+    });
+
+    if (plan) {
+      let equityPortion = amount;
+      let rentPortion = 0;
+
+      if (plan.type === 'RENT_TO_OWN') {
+        const schedule = plan.scheduleDetails as any;
+        const rentDeduction = schedule?.rentDeductionAmount || 0;
+
+        if (amount > rentDeduction) {
+          rentPortion = rentDeduction;
+          equityPortion = amount - rentDeduction;
+        } else {
+          rentPortion = amount;
+          equityPortion = 0;
+        }
+
+        if (rentPortion > 0) {
+          await tx.ledgerEntry.create({
+            data: {
+              paymentPlanId,
+              type: 'RENT_DEDUCTION',
+              amountGHS: -rentPortion,
+              paymentId: payment.id,
+            }
+          });
+        }
+      }
+
+      await tx.ledgerEntry.create({
+        data: {
+          paymentPlanId,
+          type: 'PAYMENT',
+          amountGHS: amount,
+          paymentId: payment.id,
+        }
+      });
+
+      if (equityPortion > 0) {
+        await tx.paymentPlan.update({
+          where: { id: paymentPlanId },
+          data: {
+            equityAccrued: { increment: equityPortion }
+          }
+        });
+      }
+
+      if (plan.client && plan.client.email) {
+        await sendPaymentReceipt(plan.client.email, amount, currency, plan.id);
+      }
+
+      if (propertyInterestId) {
+        await tx.propertyInterest.update({
+          where: { id: propertyInterestId },
+          data: { status: 'APPROVED' }
+        });
+      }
+
+      if (authorization && authorization.reusable) {
+        const existingCard = await tx.savedCard.findFirst({
+          where: {
+            clientId: plan.clientId,
+            authorizationCode: authorization.authorization_code
+          }
+        });
+
+        if (!existingCard) {
+          await tx.savedCard.create({
+            data: {
+              clientId: plan.clientId,
+              authorizationCode: authorization.authorization_code,
+              last4: authorization.last4,
+              cardType: authorization.card_type,
+              expMonth: authorization.exp_month,
+              expYear: authorization.exp_year,
+              bank: authorization.bank
+            }
+          });
+        }
+      }
+    }
+  }
+}
+
+// Stripe Webhook Endpoint
+router.post('/stripe', async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event: Stripe.Event;
+
+  try {
+    const rawBody = (req as any).rawBody || req.body;
+    if (STRIPE_WEBHOOK_SECRET && sig) {
+      event = stripe.webhooks.constructEvent(rawBody, sig as string, STRIPE_WEBHOOK_SECRET);
+    } else {
+      event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    }
+  } catch (err: any) {
+    console.error('Stripe webhook signature error:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (session.payment_status === 'paid') {
+        const reference = session.client_reference_id || session.metadata?.reference || session.id;
+        const settledAmount = (session.amount_total || 0) / 100;
+        const settledCurrency = (session.currency || 'usd').toUpperCase();
+        const paymentPlanId = session.metadata?.paymentPlanId;
+        const propertyInterestId = session.metadata?.propertyInterestId;
+
+        await prisma.$transaction(async (tx) => {
+          await handleSuccessfulPayment(tx, {
+            reference,
+            sessionId: session.id,
+            amount: settledAmount,
+            currency: settledCurrency,
+            paymentPlanId,
+            propertyInterestId,
+          });
+        });
+      }
+    } else if (event.type === 'payment_intent.succeeded') {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      const reference = paymentIntent.metadata?.reference || paymentIntent.id;
+      const settledAmount = (paymentIntent.amount_received || paymentIntent.amount) / 100;
+      const settledCurrency = (paymentIntent.currency || 'usd').toUpperCase();
+      const paymentPlanId = paymentIntent.metadata?.paymentPlanId;
+      const propertyInterestId = paymentIntent.metadata?.propertyInterestId;
+
+      await prisma.$transaction(async (tx) => {
+        await handleSuccessfulPayment(tx, {
+          reference,
+          amount: settledAmount,
+          currency: settledCurrency,
+          paymentPlanId,
+          propertyInterestId,
+        });
+      });
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Stripe webhook handling error:', error);
+    res.status(500).send('Webhook handling error');
+  }
+});
+
+// Legacy Paystack Webhook
 router.post('/paystack', async (req, res) => {
-  // Validate Paystack signature
   const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
                      .update(JSON.stringify(req.body))
                      .digest('hex');
@@ -22,103 +222,21 @@ router.post('/paystack', async (req, res) => {
   if (event.event === 'charge.success') {
     const data = event.data;
     const reference = data.reference;
-    
+    const settledAmount = data.amount / 100;
+    const settledCurrency = data.currency;
+    const paymentPlanId = data.metadata?.paymentPlanId;
+    const propertyInterestId = data.metadata?.propertyInterestId;
+
     try {
       await prisma.$transaction(async (tx) => {
-        const payment = await tx.payment.findUnique({
-          where: { providerTransactionId: reference },
+        await handleSuccessfulPayment(tx, {
+          reference,
+          amount: settledAmount,
+          currency: settledCurrency,
+          paymentPlanId,
+          propertyInterestId,
+          authorization: data.authorization
         });
-        
-        // Idempotency check: if payment doesn't exist or is already processed, skip
-        if (!payment || payment.status === 'SUCCESS') {
-          return;
-        }
-        
-        const settledAmountGHS = data.amount / 100; // Paystack sends amounts in smallest unit (kobo/pesewas)
-        
-        await tx.payment.update({
-          where: { id: payment.id },
-          data: { 
-            status: 'SUCCESS',
-            settledAmount: settledAmountGHS,
-            settledCurrency: data.currency
-          }
-        });
-        
-        // We expect paymentPlanId to be passed in the metadata during initialization
-        const paymentPlanId = data.metadata?.paymentPlanId;
-        
-        if (paymentPlanId) {
-           const plan = await tx.paymentPlan.findUnique({ 
-             where: { id: paymentPlanId },
-             include: { client: true }
-           });
-           
-           if (plan) {
-              // Amortization logic based on plan type
-              let equityPortion = settledAmountGHS;
-              let rentPortion = 0;
-              
-              if (plan.type === 'RENT_TO_OWN') {
-                const schedule = plan.scheduleDetails as any;
-                const rentDeduction = schedule?.rentDeductionAmount || 0;
-                
-                if (settledAmountGHS > rentDeduction) {
-                  rentPortion = rentDeduction;
-                  equityPortion = settledAmountGHS - rentDeduction;
-                } else {
-                  rentPortion = settledAmountGHS;
-                  equityPortion = 0;
-                }
-                
-                // Record the rent deduction as a separate ledger entry
-                if (rentPortion > 0) {
-                  await tx.ledgerEntry.create({
-                    data: {
-                      paymentPlanId,
-                      type: 'RENT_DEDUCTION',
-                      amountGHS: -rentPortion, // Negative to denote fee/deduction
-                      paymentId: payment.id,
-                    }
-                  });
-                }
-              }
-
-              // Create the immutable ledger entry for the gross payment
-              await tx.ledgerEntry.create({
-                data: {
-                  paymentPlanId,
-                  type: 'PAYMENT',
-                  amountGHS: settledAmountGHS,
-                  paymentId: payment.id,
-                }
-              });
-              
-              // Update accrued equity
-              if (equityPortion > 0) {
-                await tx.paymentPlan.update({
-                  where: { id: paymentPlanId },
-                  data: {
-                    equityAccrued: { increment: equityPortion }
-                  }
-                });
-              }
-              
-              // Send Email Receipt
-              if (plan.client && plan.client.email) {
-                await sendPaymentReceipt(plan.client.email, settledAmountGHS, data.currency, plan.id);
-              }
-
-              // If this was an initial deposit for a property application, automatically approve the interest
-              const propertyInterestId = data.metadata?.propertyInterestId;
-              if (propertyInterestId) {
-                await tx.propertyInterest.update({
-                  where: { id: propertyInterestId },
-                  data: { status: 'APPROVED' }
-                });
-              }
-           }
-        }
       });
     } catch (error) {
       console.error('Webhook processing error:', error);
@@ -126,7 +244,6 @@ router.post('/paystack', async (req, res) => {
     }
   }
 
-  // Acknowledge receipt to Paystack
   res.status(200).send('Webhook received');
 });
 
