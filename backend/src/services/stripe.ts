@@ -54,43 +54,74 @@ export class StripeService implements IPaymentProvider {
         console.warn('Could not retrieve or create Stripe customer:', custErr);
       }
 
-      const session = await this.stripe.checkout.sessions.create({
-        mode: 'payment',
-        ...(customerId
-          ? { customer: customerId }
-          : { customer_email: email, customer_creation: 'always' }),
-        client_reference_id: reference,
-        line_items: [
-          {
-            price_data: {
-              currency: stripeCurrency,
-              unit_amount: unitAmount,
-              product_data: {
-                name: metadata?.description || `Cereno Homes - Property Payment`,
-                description: `Transaction Reference: ${reference}`,
+      let session: Stripe.Checkout.Session;
+      try {
+        session = await this.stripe.checkout.sessions.create({
+          mode: 'payment',
+          ...(customerId ? { customer: customerId } : { customer_email: email }),
+          client_reference_id: reference,
+          line_items: [
+            {
+              price_data: {
+                currency: stripeCurrency,
+                unit_amount: unitAmount,
+                product_data: {
+                  name: metadata?.description || `Cereno Homes - Property Payment`,
+                  description: `Transaction Reference: ${reference}`,
+                },
               },
+              quantity: 1,
             },
-            quantity: 1,
-          },
-        ],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        metadata: {
-          reference,
-          paymentPlanId: metadata?.paymentPlanId ? String(metadata.paymentPlanId) : '',
-          propertyInterestId: metadata?.propertyInterestId ? String(metadata.propertyInterestId) : '',
-          originalCurrency: currency.toUpperCase(),
-          originalAmount: String(amount),
-        },
-        payment_intent_data: {
-          setup_future_usage: 'off_session',
+          ],
+          success_url: successUrl,
+          cancel_url: cancelUrl,
           metadata: {
             reference,
             paymentPlanId: metadata?.paymentPlanId ? String(metadata.paymentPlanId) : '',
             propertyInterestId: metadata?.propertyInterestId ? String(metadata.propertyInterestId) : '',
+            originalCurrency: currency.toUpperCase(),
+            originalAmount: String(amount),
           },
-        },
-      });
+          payment_intent_data: {
+            setup_future_usage: 'off_session',
+            metadata: {
+              reference,
+              paymentPlanId: metadata?.paymentPlanId ? String(metadata.paymentPlanId) : '',
+              propertyInterestId: metadata?.propertyInterestId ? String(metadata.propertyInterestId) : '',
+            },
+          },
+        });
+      } catch (sessionErr: any) {
+        console.warn('Checkout session creation with setup_future_usage failed, trying standard checkout:', sessionErr.message);
+        // Fallback without setup_future_usage in case restricted key or currency restrictions apply
+        session = await this.stripe.checkout.sessions.create({
+          mode: 'payment',
+          ...(customerId ? { customer: customerId } : { customer_email: email }),
+          client_reference_id: reference,
+          line_items: [
+            {
+              price_data: {
+                currency: stripeCurrency,
+                unit_amount: unitAmount,
+                product_data: {
+                  name: metadata?.description || `Cereno Homes - Property Payment`,
+                  description: `Transaction Reference: ${reference}`,
+                },
+              },
+              quantity: 1,
+            },
+          ],
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          metadata: {
+            reference,
+            paymentPlanId: metadata?.paymentPlanId ? String(metadata.paymentPlanId) : '',
+            propertyInterestId: metadata?.propertyInterestId ? String(metadata.propertyInterestId) : '',
+            originalCurrency: currency.toUpperCase(),
+            originalAmount: String(amount),
+          },
+        });
+      }
 
       return {
         authorization_url: session.url,
