@@ -7,17 +7,14 @@ async function main() {
   const email = process.env.ADMIN_EMAIL || 'admin@cerenohomes.com';
   const password = process.env.ADMIN_PASSWORD || 'password123';
   
-  const existingUser = await prisma.adminUser.findUnique({ where: { email } });
-  
-  if (existingUser) {
-    console.log(`Admin user ${email} already exists.`);
-    return;
-  }
-
   const hashedPassword = await bcrypt.hash(password, 10);
   
-  const user = await prisma.adminUser.create({
-    data: {
+  const user = await prisma.adminUser.upsert({
+    where: { email },
+    update: {
+      password: hashedPassword
+    },
+    create: {
       email,
       password: hashedPassword,
       name: 'System Admin',
@@ -25,7 +22,7 @@ async function main() {
     }
   });
 
-  console.log(`Successfully created admin user:`);
+  console.log(`Successfully synced admin user:`);
   console.log(`Email: ${email}`);
   console.log(`Password: ${password}`);
 }
