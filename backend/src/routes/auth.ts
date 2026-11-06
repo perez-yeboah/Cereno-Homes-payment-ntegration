@@ -23,16 +23,20 @@ const LoginSchema = z.object({
 router.post('/register', async (req, res) => {
   try {
     const { email, password, name } = RegisterSchema.parse(req.body);
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const existingUser = await prisma.adminUser.findUnique({ where: { email } });
+    const existingUser = await prisma.adminUser.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } }
+    });
     if (existingUser) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+
     const user = await prisma.adminUser.create({
       data: {
-        email,
+        email: normalizedEmail,
         password: hashedPassword,
         name
       }
@@ -53,13 +57,17 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = LoginSchema.parse(req.body);
+    const normalizedEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
 
-    const user = await prisma.adminUser.findUnique({ where: { email } });
+    const user = await prisma.adminUser.findFirst({
+      where: { email: { equals: normalizedEmail, mode: 'insensitive' } }
+    });
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const validPassword = await bcrypt.compare(password, user.password);
+    const validPassword = await bcrypt.compare(cleanPassword, user.password);
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }

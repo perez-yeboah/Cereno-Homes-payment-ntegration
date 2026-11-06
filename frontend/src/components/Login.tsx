@@ -24,7 +24,10 @@ const Login: React.FC = () => {
   const onSubmit = async (data: LoginForm) => {
     setApiError(null);
     try {
-      const response = await api.post(`/auth/login`, data);
+      const response = await api.post(`/auth/login`, {
+        email: data.email.trim().toLowerCase(),
+        password: data.password.trim()
+      });
       localStorage.setItem('adminToken', response.data.token);
       navigate('/admin');
     } catch (error: any) {
