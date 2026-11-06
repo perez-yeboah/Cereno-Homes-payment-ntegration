@@ -1,12 +1,59 @@
 import React, { useEffect, useState } from 'react';
-import { fetchAdminBalances, fetchOverdueInvoices, fetchAdminProperties, fetchLiveTransactions, createProperty, sendProjectUpdate, fetchAdminApplications, updateApplicationStatus, deleteProperty, updateProperty } from '../services/api';
+import { 
+  fetchAdminBalances, 
+  fetchOverdueInvoices, 
+  fetchAdminProperties, 
+  fetchLiveTransactions, 
+  createProperty, 
+  sendProjectUpdate, 
+  fetchAdminApplications, 
+  updateApplicationStatus, 
+  deleteProperty, 
+  updateProperty,
+  fetchAllInvoices,
+  createInvoicePaymentLink,
+  regenerateInvoicePaymentLink,
+  recordManualPayment,
+  downloadPaymentReceipt
+} from '../services/api';
 
 const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'properties' | 'transactions' | 'applications'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'properties' | 'transactions' | 'invoices' | 'applications'>('overview');
   
   // Overview State
   const [balances, setBalances] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
+
+  // Transactions / Payments State
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [transactionSearch, setTransactionSearch] = useState('');
+  const [transactionProviderFilter, setTransactionProviderFilter] = useState<'ALL' | 'STRIPE' | 'MANUAL_WIRE'>('ALL');
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState<'ALL' | 'PAYMENT' | 'RENT_DEDUCTION' | 'PENALTY'>('ALL');
+  const [showManualWireModal, setShowManualWireModal] = useState(false);
+  const [downloadingReceiptId, setDownloadingReceiptId] = useState<string | null>(null);
+  const [copiedRefId, setCopiedRefId] = useState<string | null>(null);
+  const [manualWireForm, setManualWireForm] = useState({
+    paymentPlanId: '',
+    amount: '',
+    reference: '',
+    date: new Date().toISOString().split('T')[0]
+  });
+
+  // Invoices & Payment Links State
+  const [allInvoices, setAllInvoices] = useState<any[]>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(false);
+  const [invoiceFilter, setInvoiceFilter] = useState<'ALL' | 'UNPAID' | 'PAID' | 'OVERDUE'>('ALL');
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [generatingLinkId, setGeneratingLinkId] = useState<string | null>(null);
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const [generatedLinkResult, setGeneratedLinkResult] = useState<{ url: string; invoiceId: string; clientName: string; amount: number } | null>(null);
+  const [newInvoiceForm, setNewInvoiceForm] = useState({
+    paymentPlanId: '',
+    amount: '',
+    dueDate: '',
+    description: '',
+    sendEmail: true
+  });
   
   // Properties State
   const [properties, setProperties] = useState<any[]>([]);
@@ -39,12 +86,167 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const loadAllInvoices = async () => {
+    setIsLoadingInvoices(true);
+    try {
+      const data = await fetchAllInvoices();
+      setAllInvoices(data);
+    } catch (error) {
+      console.error('Failed to load invoices', error);
+    } finally {
+      setIsLoadingInvoices(false);
+    }
+  };
+
+  const handleCreateInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInvoiceForm.paymentPlanId || !newInvoiceForm.amount || !newInvoiceForm.dueDate) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      const result = await createInvoicePaymentLink({
+        paymentPlanId: newInvoiceForm.paymentPlanId,
+        amount: Number(newInvoiceForm.amount),
+        dueDate: newInvoiceForm.dueDate,
+        description: newInvoiceForm.description,
+        sendEmail: newInvoiceForm.sendEmail,
+      });
+
+      const plan = balances.find(b => b.planId === newInvoiceForm.paymentPlanId);
+      setGeneratedLinkResult({
+        url: result.paymentLink,
+        invoiceId: result.invoice.id,
+        clientName: plan?.clientName || result.invoice.clientName || 'Client',
+        amount: Number(newInvoiceForm.amount),
+      });
+
+      setShowInvoiceModal(false);
+      setNewInvoiceForm({
+        paymentPlanId: '',
+        amount: '',
+        dueDate: '',
+        description: '',
+        sendEmail: true,
+      });
+
+      await loadAllInvoices();
+      fetchOverdueInvoices().then(data => setInvoices(data.data)).catch(console.error);
+    } catch (error: any) {
+      console.error('Failed to create invoice payment link', error);
+      alert(error.response?.data?.error || 'Failed to create invoice payment link: ' + error.message);
+    }
+  };
+
+  const handleGenerateLinkForExisting = async (invoiceId: string, sendEmail: boolean = false) => {
+    setGeneratingLinkId(invoiceId);
+    try {
+      const result = await regenerateInvoicePaymentLink(invoiceId, sendEmail);
+      if (result.paymentLink) {
+        await navigator.clipboard.writeText(result.paymentLink);
+        setCopiedLinkId(invoiceId);
+        setTimeout(() => setCopiedLinkId(null), 3000);
+        if (sendEmail) {
+          alert('Payment link copied to clipboard and emailed to client!');
+        } else {
+          alert('Stripe payment link copied to clipboard!');
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to generate link for invoice', error);
+      alert(error.response?.data?.error || 'Failed to generate link: ' + error.message);
+    } finally {
+      setGeneratingLinkId(null);
+    }
+  };
+
+  const handleCopyLink = async (url: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLinkId(id);
+      setTimeout(() => setCopiedLinkId(null), 3000);
+    } catch (err) {
+      console.error('Failed to copy', err);
+    }
+  };
+
+  const loadTransactions = async () => {
+    setIsLoadingTransactions(true);
+    try {
+      const data = await fetchLiveTransactions();
+      setTransactions(data);
+    } catch (err) {
+      console.error('Failed to load transactions', err);
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  };
+
+  const handleRecordManualPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualWireForm.paymentPlanId || !manualWireForm.amount) {
+      alert('Please select a client payment plan and specify the amount.');
+      return;
+    }
+
+    try {
+      const plan = balances.find(b => b.planId === manualWireForm.paymentPlanId);
+      await recordManualPayment({
+        paymentPlanId: manualWireForm.paymentPlanId,
+        amountGHS: Number(manualWireForm.amount),
+        originalCurrency: plan?.currency || 'GHS',
+        originalAmount: Number(manualWireForm.amount),
+        reference: manualWireForm.reference || `WIRE-${Date.now()}`,
+        date: manualWireForm.date || new Date().toISOString(),
+      });
+
+      setShowManualWireModal(false);
+      setManualWireForm({
+        paymentPlanId: '',
+        amount: '',
+        reference: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+      alert('Bank wire payment recorded successfully!');
+
+      await loadTransactions();
+      fetchAdminBalances().then(data => setBalances(data.data)).catch(console.error);
+    } catch (error: any) {
+      console.error('Failed to record manual payment', error);
+      alert(error.response?.data?.error || 'Failed to record manual payment: ' + error.message);
+    }
+  };
+
+  const handleDownloadReceipt = async (paymentId: string) => {
+    setDownloadingReceiptId(paymentId);
+    try {
+      await downloadPaymentReceipt(paymentId);
+    } catch (error: any) {
+      console.error('Failed to download receipt', error);
+      alert('Failed to download receipt: ' + (error.message || 'Error'));
+    } finally {
+      setDownloadingReceiptId(null);
+    }
+  };
+
+  const handleCopyReference = async (ref: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(ref);
+      setCopiedRefId(id);
+      setTimeout(() => setCopiedRefId(null), 3000);
+    } catch (err) {
+      console.error('Failed to copy reference', err);
+    }
+  };
+
   useEffect(() => {
     fetchAdminBalances().then(data => setBalances(data.data)).catch(console.error);
     fetchOverdueInvoices().then(data => setInvoices(data.data)).catch(console.error);
     fetchAdminProperties().then(data => setProperties(data)).catch(console.error);
-    fetchLiveTransactions().then(data => setTransactions(data)).catch(console.error);
+    loadTransactions();
     loadApplications();
+    loadAllInvoices();
   }, []);
 
   const handleCreateProperty = async (e: React.FormEvent) => {
@@ -436,42 +638,304 @@ const AdminDashboard: React.FC = () => {
     </div>
   );
 
+  const filteredTransactions = transactions.filter((tx) => {
+    // Search query filter
+    if (transactionSearch.trim()) {
+      const q = transactionSearch.toLowerCase();
+      const clientName = tx.paymentPlan?.client?.name?.toLowerCase() || '';
+      const clientEmail = tx.paymentPlan?.client?.email?.toLowerCase() || '';
+      const address = tx.paymentPlan?.property?.address?.toLowerCase() || '';
+      const ref = tx.payment?.providerTransactionId?.toLowerCase() || '';
+      if (!clientName.includes(q) && !clientEmail.includes(q) && !address.includes(q) && !ref.includes(q)) {
+        return false;
+      }
+    }
+
+    // Provider filter
+    if (transactionProviderFilter !== 'ALL') {
+      const prov = tx.payment?.provider?.toUpperCase() || 'INTERNAL';
+      if (transactionProviderFilter === 'STRIPE' && !prov.includes('STRIPE')) return false;
+      if (transactionProviderFilter === 'MANUAL_WIRE' && !prov.includes('MANUAL') && !prov.includes('WIRE')) return false;
+    }
+
+    // Type filter
+    if (transactionTypeFilter !== 'ALL') {
+      if (tx.type !== transactionTypeFilter) return false;
+    }
+
+    return true;
+  });
+
+  // Calculate statistics
+  const totalVolume = transactions
+    .filter(t => t.type === 'PAYMENT')
+    .reduce((sum, t) => sum + Number(t.amountGHS), 0);
+
+  const stripeVolume = transactions
+    .filter(t => t.type === 'PAYMENT' && t.payment?.provider?.toUpperCase().includes('STRIPE'))
+    .reduce((sum, t) => sum + Number(t.amountGHS), 0);
+
+  const wireVolume = transactions
+    .filter(t => t.type === 'PAYMENT' && (t.payment?.provider?.toUpperCase().includes('MANUAL') || t.payment?.provider?.toUpperCase().includes('WIRE')))
+    .reduce((sum, t) => sum + Number(t.amountGHS), 0);
+
   const renderTransactions = () => (
-    <div className="animate-fade-in">
-      <h2 className="text-2xl font-light text-slate-200 mb-6">Live Transactions</h2>
-      <div className="glass-panel rounded-2xl overflow-hidden border border-slate-700/50">
+    <div className="animate-fade-in space-y-6">
+      {/* Top Header & Actions */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-light text-slate-200">Client Payments & Transactions Ledger</h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Real-time audit log of all online Stripe payments, bank wire transfers, and account ledger entries.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => loadTransactions()}
+            disabled={isLoadingTransactions}
+            className="p-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition"
+            title="Refresh Transactions"
+          >
+            <svg className={`w-4 h-4 ${isLoadingTransactions ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          </button>
+          <button 
+            onClick={() => setShowManualWireModal(true)}
+            className="bg-brand-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-brand-primary/90 transition shadow-lg shadow-brand-primary/20 flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            Record Bank Wire Transfer
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="glass-panel p-5 rounded-2xl border border-slate-700/50">
+          <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Total Processed Volume</span>
+          <div className="text-2xl font-bold text-slate-100">
+            ₵{totalVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <span className="text-xs text-slate-500 mt-1 block">Total client payments received</span>
+        </div>
+
+        <div className="glass-panel p-5 rounded-2xl border border-indigo-500/20 bg-indigo-950/10">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-indigo-400 font-medium uppercase tracking-wider">Stripe Payments</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">STRIPE</span>
+          </div>
+          <div className="text-2xl font-bold text-indigo-400">
+            ₵{stripeVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <span className="text-xs text-slate-400 mt-1 block">
+            {transactions.filter(t => t.payment?.provider?.toUpperCase().includes('STRIPE')).length} online transactions
+          </span>
+        </div>
+
+        <div className="glass-panel p-5 rounded-2xl border border-emerald-500/20 bg-emerald-950/10">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-emerald-400 font-medium uppercase tracking-wider">Bank Wire Transfers</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">WIRE</span>
+          </div>
+          <div className="text-2xl font-bold text-emerald-400">
+            ₵{wireVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <span className="text-xs text-slate-400 mt-1 block">
+            {transactions.filter(t => t.payment?.provider?.toUpperCase().includes('MANUAL') || t.payment?.provider?.toUpperCase().includes('WIRE')).length} manual entries
+          </span>
+        </div>
+
+        <div className="glass-panel p-5 rounded-2xl border border-slate-700/50">
+          <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Ledger Activity</span>
+          <div className="text-2xl font-bold text-slate-100">{transactions.length}</div>
+          <span className="text-xs text-slate-500 mt-1 block">Total financial events recorded</span>
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-slate-900/40 p-4 rounded-2xl border border-slate-800">
+        <div className="relative flex-1 max-w-md">
+          <svg className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <input
+            type="text"
+            placeholder="Search by client, property, or reference..."
+            value={transactionSearch}
+            onChange={(e) => setTransactionSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-slate-800/60 border border-slate-700 rounded-xl text-slate-200 text-sm focus:outline-none focus:border-brand-primary placeholder:text-slate-500"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Provider Filter */}
+          <div className="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/60">
+            {(['ALL', 'STRIPE', 'MANUAL_WIRE'] as const).map(prov => (
+              <button
+                key={prov}
+                onClick={() => setTransactionProviderFilter(prov)}
+                className={`px-3 py-1 text-xs font-medium rounded-lg transition ${
+                  transactionProviderFilter === prov
+                    ? 'bg-brand-primary text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {prov === 'ALL' ? 'All Channels' : prov === 'STRIPE' ? 'Stripe' : 'Bank Wire'}
+              </button>
+            ))}
+          </div>
+
+          {/* Type Filter */}
+          <div className="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700/60">
+            {(['ALL', 'PAYMENT', 'RENT_DEDUCTION', 'PENALTY'] as const).map(type => (
+              <button
+                key={type}
+                onClick={() => setTransactionTypeFilter(type)}
+                className={`px-3 py-1 text-xs font-medium rounded-lg transition ${
+                  transactionTypeFilter === type
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {type === 'ALL' ? 'All Types' : type === 'RENT_DEDUCTION' ? 'Rent' : type === 'PAYMENT' ? 'Payments' : 'Penalties'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Transactions Table */}
+      <div className="glass-panel rounded-2xl overflow-hidden border border-slate-700/50 shadow-2xl">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs text-slate-400 uppercase bg-slate-800/80 border-b border-slate-700/80">
+            <thead className="text-xs text-slate-400 uppercase bg-slate-900/60 border-b border-slate-700/50">
               <tr>
-                <th className="px-6 py-4 font-semibold tracking-wider">Date</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Client</th>
+                <th className="px-6 py-4 font-semibold tracking-wider">Date & Time</th>
+                <th className="px-6 py-4 font-semibold tracking-wider">Client & Property</th>
+                <th className="px-6 py-4 font-semibold tracking-wider">Channel & Reference</th>
                 <th className="px-6 py-4 font-semibold tracking-wider">Type</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-right">Amount (GHS)</th>
+                <th className="px-6 py-4 font-semibold tracking-wider text-right">Amount</th>
+                <th className="px-6 py-4 font-semibold tracking-wider text-right">Receipt</th>
               </tr>
             </thead>
-            <tbody>
-              {transactions.length === 0 ? (
-                <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-500 italic">No recent transactions found.</td></tr>
+            <tbody className="divide-y divide-slate-800/50">
+              {isLoadingTransactions ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-500">Loading transactions...</td></tr>
+              ) : filteredTransactions.length === 0 ? (
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-slate-500 italic">No transactions matched your filters.</td></tr>
               ) : (
-                transactions.map((tx) => (
-                  <tr key={tx.id} className="border-b border-slate-800/50 hover:bg-slate-700/30 transition-colors group">
-                    <td className="px-6 py-4 whitespace-nowrap text-slate-400 group-hover:text-slate-300">
-                      {new Date(tx.transactionDate).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 font-medium text-slate-200">
-                      {tx.paymentPlan?.client?.name || 'Unknown Client'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 text-xs rounded-full border font-medium ${tx.type === 'PAYMENT' ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30' : 'bg-slate-800 text-slate-300 border-slate-600'}`}>
-                        {tx.type}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right font-semibold text-slate-200">
-                      {Number(tx.amountGHS).toFixed(2)}
-                    </td>
-                  </tr>
-                ))
+                filteredTransactions.map((tx) => {
+                  const provider = tx.payment?.provider?.toUpperCase() || (tx.paymentId ? 'STRIPE' : 'LEDGER');
+                  const reference = tx.payment?.providerTransactionId || tx.id;
+                  const isStripe = provider.includes('STRIPE');
+                  const isWire = provider.includes('MANUAL') || provider.includes('WIRE');
+                  
+                  return (
+                    <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors group">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-slate-200">{new Date(tx.transactionDate).toLocaleDateString()}</div>
+                        <div className="text-xs text-slate-500">{new Date(tx.transactionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-slate-100 flex items-center gap-2">
+                          {tx.paymentPlan?.client?.name || 'Unknown Client'}
+                          {tx.paymentPlan?.type && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                              {tx.paymentPlan.type === 'RENT_TO_OWN' ? 'Rent-to-Own' : 'Pay-to-Own'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">{tx.paymentPlan?.property?.address || 'Property'}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{tx.paymentPlan?.client?.email}</div>
+                      </td>
+
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2 mb-1">
+                          {isStripe ? (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                              Stripe
+                            </span>
+                          ) : isWire ? (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              Bank Wire
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-slate-700/40 text-slate-300 border border-slate-600 font-medium">
+                              Ledger
+                            </span>
+                          )}
+
+                          {tx.payment?.status && (
+                            <span className={`text-[10px] font-semibold ${tx.payment.status === 'SUCCESS' ? 'text-emerald-400' : tx.payment.status === 'PENDING' ? 'text-amber-400' : 'text-red-400'}`}>
+                              &bull; {tx.payment.status}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono">
+                          <span className="truncate max-w-[150px]" title={reference}>{reference}</span>
+                          <button
+                            onClick={() => handleCopyReference(reference, tx.id)}
+                            className="text-slate-500 hover:text-slate-300 p-0.5 transition"
+                            title="Copy transaction reference"
+                          >
+                            {copiedRefId === tx.id ? (
+                              <span className="text-[10px] text-emerald-400 font-sans font-bold">Copied!</span>
+                            ) : (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                            )}
+                          </button>
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 text-xs rounded-full border font-medium ${
+                          tx.type === 'PAYMENT' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                          tx.type === 'RENT_DEDUCTION' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
+                          'bg-red-500/10 text-red-400 border-red-500/30'
+                        }`}>
+                          {tx.type}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <div className={`font-semibold ${Number(tx.amountGHS) < 0 ? 'text-amber-400' : 'text-slate-100'}`}>
+                          {Number(tx.amountGHS) < 0 ? '-' : ''}₵{Math.abs(Number(tx.amountGHS)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                        {tx.payment?.originalCurrency && tx.payment.originalCurrency !== 'GHS' && (
+                          <div className="text-xs text-slate-400">
+                            ({tx.payment.originalCurrency} {Number(tx.payment.originalAmount).toLocaleString()})
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        {tx.paymentId ? (
+                          <button
+                            onClick={() => handleDownloadReceipt(tx.paymentId)}
+                            disabled={downloadingReceiptId === tx.paymentId}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition shadow-sm"
+                            title="Download official PDF payment receipt"
+                          >
+                            {downloadingReceiptId === tx.paymentId ? (
+                              <>
+                                <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                Downloading...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3.5 h-3.5 text-brand-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                PDF Receipt
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-500 italic">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -554,6 +1018,180 @@ const AdminDashboard: React.FC = () => {
     </div>
   );
 
+  const filteredInvoices = allInvoices.filter(inv => {
+    if (invoiceFilter === 'PAID') return inv.isPaid;
+    if (invoiceFilter === 'UNPAID') return !inv.isPaid;
+    if (invoiceFilter === 'OVERDUE') return inv.isOverdue;
+    return true;
+  });
+
+  const totalPaidInvoicesAmount = allInvoices
+    .filter(inv => inv.isPaid)
+    .reduce((sum, inv) => sum + Number(inv.amountDue), 0);
+
+  const totalPendingInvoicesAmount = allInvoices
+    .filter(inv => !inv.isPaid)
+    .reduce((sum, inv) => sum + Number(inv.amountDue), 0);
+
+  const renderInvoices = () => (
+    <div className="animate-fade-in space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-light text-slate-200">Invoices & Payment Links</h2>
+          <p className="text-sm text-slate-400 mt-1">Generate Stripe checkout payment links for clients, email invoices, and track payments.</p>
+        </div>
+        <button 
+          onClick={() => setShowInvoiceModal(true)}
+          className="bg-brand-primary text-white px-5 py-2.5 rounded-xl font-medium hover:bg-brand-primary/90 transition shadow-lg shadow-brand-primary/20 flex items-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          Generate Payment Link Invoice
+        </button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="glass-panel p-5 rounded-2xl border border-slate-700/50">
+          <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Total Invoices</span>
+          <div className="text-2xl font-bold text-slate-100">{allInvoices.length}</div>
+          <span className="text-xs text-slate-500 mt-1 block">All generated payment requests</span>
+        </div>
+        <div className="glass-panel p-5 rounded-2xl border border-emerald-500/20 bg-emerald-950/10">
+          <span className="text-xs text-emerald-400 font-medium uppercase tracking-wider block mb-1">Paid Invoices</span>
+          <div className="text-2xl font-bold text-emerald-400">
+            {allInvoices.filter(i => i.isPaid).length} <span className="text-sm font-normal text-slate-400">({totalPaidInvoicesAmount.toLocaleString()} GHS)</span>
+          </div>
+          <span className="text-xs text-emerald-500/70 mt-1 block">Successfully settled via Stripe / portal</span>
+        </div>
+        <div className="glass-panel p-5 rounded-2xl border border-amber-500/20 bg-amber-950/10">
+          <span className="text-xs text-amber-400 font-medium uppercase tracking-wider block mb-1">Pending / Overdue</span>
+          <div className="text-2xl font-bold text-amber-400">
+            {allInvoices.filter(i => !i.isPaid).length} <span className="text-sm font-normal text-slate-400">({totalPendingInvoicesAmount.toLocaleString()} GHS)</span>
+          </div>
+          <span className="text-xs text-amber-500/70 mt-1 block">Awaiting client payment</span>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2">
+        {(['ALL', 'UNPAID', 'OVERDUE', 'PAID'] as const).map(filter => (
+          <button
+            key={filter}
+            onClick={() => setInvoiceFilter(filter)}
+            className={`px-3.5 py-1.5 text-xs font-medium rounded-lg border transition ${
+              invoiceFilter === filter 
+                ? 'bg-brand-primary text-white border-brand-primary shadow-sm shadow-brand-primary/30' 
+                : 'bg-slate-800/40 text-slate-400 border-slate-700 hover:text-slate-200 hover:bg-slate-700/50'
+            }`}
+          >
+            {filter} {filter === 'ALL' ? `(${allInvoices.length})` : `(${allInvoices.filter(i => filter === 'PAID' ? i.isPaid : filter === 'OVERDUE' ? i.isOverdue : !i.isPaid).length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Invoices List Table */}
+      <div className="glass-panel rounded-2xl border border-slate-700/50 overflow-hidden shadow-2xl">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-300">
+            <thead className="bg-slate-900/60 text-slate-400 uppercase text-xs border-b border-slate-700/50">
+              <tr>
+                <th className="px-6 py-4 font-semibold tracking-wider">Client & Property</th>
+                <th className="px-6 py-4 font-semibold tracking-wider">Amount Due</th>
+                <th className="px-6 py-4 font-semibold tracking-wider">Due Date</th>
+                <th className="px-6 py-4 font-semibold tracking-wider">Status</th>
+                <th className="px-6 py-4 font-semibold tracking-wider text-right">Payment Link Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50">
+              {isLoadingInvoices ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-500">Loading invoices...</td></tr>
+              ) : filteredInvoices.length === 0 ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">No invoices found for this filter.</td></tr>
+              ) : (
+                filteredInvoices.map((inv) => (
+                  <tr key={inv.id} className="hover:bg-slate-800/40 transition-colors group">
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-slate-100">{inv.clientName}</div>
+                      <div className="text-xs text-slate-400 mt-0.5">{inv.propertyAddress}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">{inv.clientEmail}</div>
+                    </td>
+                    <td className="px-6 py-4 font-semibold text-slate-100">
+                      {inv.currency === 'USD' ? '$' : inv.currency === 'EUR' ? '€' : '₵'}{Number(inv.amountDue).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-slate-300">{new Date(inv.dueDate).toLocaleDateString()}</div>
+                      {inv.isOverdue && (
+                        <span className="text-[11px] text-red-400 font-medium block">Past Due Date</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      {inv.isPaid ? (
+                        <span className="px-2.5 py-1 text-xs rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium inline-flex items-center gap-1">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          Paid
+                        </span>
+                      ) : inv.isOverdue ? (
+                        <span className="px-2.5 py-1 text-xs rounded-full bg-red-500/20 text-red-400 border border-red-500/30 font-medium">
+                          Overdue
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 text-xs rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium">
+                          Pending
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {!inv.isPaid ? (
+                        <div className="flex justify-end items-center gap-2">
+                          <button
+                            onClick={() => handleGenerateLinkForExisting(inv.id, false)}
+                            disabled={generatingLinkId === inv.id}
+                            className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition flex items-center gap-1.5 ${
+                              copiedLinkId === inv.id
+                                ? 'bg-emerald-600 text-white border-emerald-500'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-600'
+                            }`}
+                            title="Generate and copy Stripe payment link to clipboard"
+                          >
+                            {generatingLinkId === inv.id ? (
+                              'Generating...'
+                            ) : copiedLinkId === inv.id ? (
+                              <>
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                Link Copied!
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                Copy Link
+                              </>
+                            )}
+                          </button>
+                          
+                          <button
+                            onClick={() => handleGenerateLinkForExisting(inv.id, true)}
+                            disabled={generatingLinkId === inv.id}
+                            className="px-3 py-1.5 text-xs rounded-lg border bg-brand-primary/20 hover:bg-brand-primary/30 text-brand-primary border-brand-primary/30 font-medium transition flex items-center gap-1.5"
+                            title="Send Stripe Payment Link directly to client's email"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                            Email Client
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-500 italic">Settled</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-[calc(100vh-80px)] p-8">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -571,8 +1209,9 @@ const AdminDashboard: React.FC = () => {
             {[
               { id: 'overview', label: 'Overview' },
               { id: 'properties', label: 'Properties' },
+              { id: 'invoices', label: 'Invoices & Links' },
               { id: 'applications', label: 'Applications' },
-              { id: 'transactions', label: 'Transactions' }
+              { id: 'transactions', label: 'Payments & Transactions' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -588,11 +1227,263 @@ const AdminDashboard: React.FC = () => {
         <div className="mt-8">
           {activeTab === 'overview' && renderOverview()}
           {activeTab === 'properties' && renderProperties()}
+          {activeTab === 'invoices' && renderInvoices()}
           {activeTab === 'applications' && renderApplications()}
           {activeTab === 'transactions' && renderTransactions()}
         </div>
 
       </div>
+
+      {/* Generated Link Result Modal */}
+      {generatedLinkResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-lg p-6 rounded-2xl border border-brand-primary/40 shadow-2xl relative animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-100">Stripe Payment Link Generated!</h3>
+                <p className="text-xs text-slate-400">Invoice ready for {generatedLinkResult.clientName}</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-300 mb-4">
+              A secure Stripe Checkout payment link has been created for <strong className="text-white">GHS {generatedLinkResult.amount.toLocaleString()}</strong>. Clients can click this link to pay immediately via Card, Google Pay, or Apple Pay.
+            </p>
+
+            <div className="p-3 bg-slate-900 rounded-xl border border-slate-700/60 mb-6 flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-300 truncate font-mono select-all flex-1">{generatedLinkResult.url}</span>
+              <button
+                onClick={() => handleCopyLink(generatedLinkResult.url, 'modal-result')}
+                className="bg-brand-primary hover:bg-brand-primary/90 text-white text-xs px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition"
+              >
+                {copiedLinkId === 'modal-result' ? 'Copied!' : 'Copy Link'}
+              </button>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <a
+                href={generatedLinkResult.url}
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition"
+              >
+                Open Stripe Checkout
+              </a>
+              <button
+                type="button"
+                onClick={() => setGeneratedLinkResult(null)}
+                className="px-5 py-2 text-xs bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition shadow-lg shadow-brand-primary/20"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generate Invoice Modal */}
+      {showInvoiceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-lg p-6 rounded-2xl border border-slate-700 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-medium text-slate-100 mb-2">Generate Payment Link Invoice</h3>
+            <p className="text-xs text-slate-400 mb-6">Create a new invoice and automatically generate a secure Stripe payment link for the client.</p>
+
+            <form onSubmit={handleCreateInvoice} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Select Client Payment Plan *</label>
+                <select
+                  required
+                  className="w-full p-2.5 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary text-sm"
+                  value={newInvoiceForm.paymentPlanId}
+                  onChange={e => {
+                    const planId = e.target.value;
+                    const selected = balances.find(b => b.planId === planId);
+                    setNewInvoiceForm({
+                      ...newInvoiceForm,
+                      paymentPlanId: planId,
+                      amount: selected ? String(Math.min(selected.balanceRemaining, 5000)) : newInvoiceForm.amount
+                    });
+                  }}
+                >
+                  <option value="">-- Choose an active payment plan --</option>
+                  {balances.map(b => (
+                    <option key={b.planId} value={b.planId}>
+                      {b.clientName} &bull; {b.propertyAddress} (Remaining: GHS {Number(b.balanceRemaining).toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Amount to Invoice (GHS) *</label>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    placeholder="0.00"
+                    className="w-full p-2.5 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary text-sm"
+                    value={newInvoiceForm.amount}
+                    onChange={e => setNewInvoiceForm({ ...newInvoiceForm, amount: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Due Date *</label>
+                  <input
+                    required
+                    type="date"
+                    className="w-full p-2.5 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary text-sm"
+                    value={newInvoiceForm.dueDate}
+                    onChange={e => setNewInvoiceForm({ ...newInvoiceForm, dueDate: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Invoice Memo / Description (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Monthly Rent-to-Own Installment or Milestone Deposit"
+                  className="w-full p-2.5 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary text-sm"
+                  value={newInvoiceForm.description}
+                  onChange={e => setNewInvoiceForm({ ...newInvoiceForm, description: e.target.value })}
+                />
+              </div>
+
+              <div className="pt-2">
+                <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={newInvoiceForm.sendEmail}
+                    onChange={e => setNewInvoiceForm({ ...newInvoiceForm, sendEmail: e.target.checked })}
+                    className="w-4 h-4 rounded text-brand-primary bg-slate-900 border-slate-700 focus:ring-brand-primary"
+                  />
+                  <span>Email the Stripe payment link directly to the client</span>
+                </label>
+              </div>
+
+              <div className="flex gap-3 justify-end mt-8 pt-4 border-t border-slate-700/50">
+                <button
+                  type="button"
+                  onClick={() => setShowInvoiceModal(false)}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-sm bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition shadow-lg shadow-brand-primary/20 font-medium"
+                >
+                  Generate Stripe Payment Link
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Record Manual Bank Wire Modal */}
+      {showManualWireModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-lg p-6 rounded-2xl border border-slate-700 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xl font-medium text-slate-100">Record Bank Wire Payment</h3>
+              <button 
+                onClick={() => setShowManualWireModal(false)}
+                className="text-slate-400 hover:text-white transition"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 mb-6">Manually record a direct bank transfer or wire received offline from a client.</p>
+
+            <form onSubmit={handleRecordManualPayment} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Select Client Payment Plan *</label>
+                <select
+                  required
+                  className="w-full p-2.5 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary text-sm"
+                  value={manualWireForm.paymentPlanId}
+                  onChange={e => {
+                    const planId = e.target.value;
+                    const selected = balances.find(b => b.planId === planId);
+                    setManualWireForm({
+                      ...manualWireForm,
+                      paymentPlanId: planId,
+                      amount: selected ? String(Math.min(selected.balanceRemaining, 5000)) : manualWireForm.amount
+                    });
+                  }}
+                >
+                  <option value="">-- Choose an active payment plan --</option>
+                  {balances.map(b => (
+                    <option key={b.planId} value={b.planId}>
+                      {b.clientName} &bull; {b.propertyAddress} (Remaining: GHS {Number(b.balanceRemaining).toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Amount Paid (GHS) *</label>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    placeholder="0.00"
+                    className="w-full p-2.5 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary text-sm"
+                    value={manualWireForm.amount}
+                    onChange={e => setManualWireForm({ ...manualWireForm, amount: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Payment Date *</label>
+                  <input
+                    required
+                    type="date"
+                    className="w-full p-2.5 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary text-sm"
+                    value={manualWireForm.date}
+                    onChange={e => setManualWireForm({ ...manualWireForm, date: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Bank Wire Reference / Swift Code</label>
+                <input
+                  type="text"
+                  placeholder="e.g. GCBB-WIRE-992019 or Slip #"
+                  className="w-full p-2.5 bg-slate-800/60 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary text-sm font-mono"
+                  value={manualWireForm.reference}
+                  onChange={e => setManualWireForm({ ...manualWireForm, reference: e.target.value })}
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end mt-8 pt-4 border-t border-slate-700/50">
+                <button
+                  type="button"
+                  onClick={() => setShowManualWireModal(false)}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-sm bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition shadow-lg shadow-brand-primary/20 font-medium"
+                >
+                  Record Payment & Update Ledger
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

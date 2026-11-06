@@ -156,6 +156,18 @@ router.post('/verify', async (req, res) => {
                   data: { equityAccrued: { increment: equityPortion } }
                 });
               }
+
+              const invoiceId = data.metadata?.invoiceId;
+              if (invoiceId) {
+                try {
+                  await tx.invoice.update({
+                    where: { id: invoiceId },
+                    data: { isPaid: true }
+                  });
+                } catch (invErr) {
+                  console.warn('Could not mark invoice as paid in verify:', invErr);
+                }
+              }
               
               if (plan.client && plan.client.email) {
                 // sendPaymentReceipt(plan.client.email, settledAmount, data.currency, plan.id);
@@ -282,6 +294,31 @@ router.post('/charge-saved-card', async (req, res) => {
     );
     
     if (chargeData.status === 'success') {
+      await prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: 'SUCCESS',
+            settledAmount: amount,
+            settledCurrency: currency,
+          },
+        });
+
+        await tx.ledgerEntry.create({
+          data: {
+            paymentPlanId,
+            type: 'PAYMENT',
+            amountGHS: amount,
+            paymentId: payment.id,
+          },
+        });
+
+        await tx.paymentPlan.update({
+          where: { id: paymentPlanId },
+          data: { equityAccrued: { increment: amount } },
+        });
+      });
+
       res.json({
         message: 'Payment charged successfully',
         status: 'success',

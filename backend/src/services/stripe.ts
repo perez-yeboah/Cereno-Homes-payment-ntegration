@@ -31,9 +31,34 @@ export class StripeService implements IPaymentProvider {
       // Supported Stripe currencies are lowercase 3-letter ISO codes
       const stripeCurrency = (currency || 'USD').toLowerCase();
 
+      // Get or create Stripe Customer so payment method can be saved for future off-session charges
+      let customerId: string | undefined;
+      try {
+        const existingCustomers = await this.stripe.customers.list({
+          email,
+          limit: 1,
+        });
+        if (existingCustomers.data.length > 0) {
+          customerId = existingCustomers.data[0].id;
+        } else {
+          const customer = await this.stripe.customers.create({
+            email,
+            metadata: {
+              reference,
+              paymentPlanId: metadata?.paymentPlanId ? String(metadata.paymentPlanId) : '',
+            },
+          });
+          customerId = customer.id;
+        }
+      } catch (custErr) {
+        console.warn('Could not retrieve or create Stripe customer:', custErr);
+      }
+
       const session = await this.stripe.checkout.sessions.create({
         mode: 'payment',
-        customer_email: email,
+        ...(customerId
+          ? { customer: customerId }
+          : { customer_email: email, customer_creation: 'always' }),
         client_reference_id: reference,
         line_items: [
           {
@@ -156,10 +181,33 @@ export class StripeService implements IPaymentProvider {
       const stripeCurrency = (currency || 'USD').toLowerCase();
       const unitAmount = Math.round(amount * 100);
 
+      // Retrieve PaymentMethod to extract associated customer
+      let customerId: string | undefined;
+      try {
+        const paymentMethod = await this.stripe.paymentMethods.retrieve(authorizationCode);
+        if (paymentMethod.customer) {
+          customerId = typeof paymentMethod.customer === 'string' ? paymentMethod.customer : paymentMethod.customer.id;
+        }
+      } catch (pmErr) {
+        console.warn('Could not retrieve payment method customer:', pmErr);
+      }
+
+      if (!customerId && email) {
+        try {
+          const customers = await this.stripe.customers.list({ email, limit: 1 });
+          if (customers.data.length > 0) {
+            customerId = customers.data[0].id;
+          }
+        } catch (cErr) {
+          console.warn('Could not find customer by email for charge:', cErr);
+        }
+      }
+
       const paymentIntent = await this.stripe.paymentIntents.create({
         amount: unitAmount,
         currency: stripeCurrency,
         payment_method: authorizationCode,
+        ...(customerId ? { customer: customerId } : {}),
         confirm: true,
         off_session: true,
         receipt_email: email,

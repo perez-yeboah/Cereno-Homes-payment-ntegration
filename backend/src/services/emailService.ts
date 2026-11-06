@@ -59,3 +59,43 @@ export const sendApplicationStatusUpdate = async (to: string, status: string, pr
   `;
   await sendEmail(to, subject, html);
 };
+
+export const sendInvoicePaymentLinkEmail = async (
+  to: string,
+  clientName: string,
+  amount: number,
+  currency: string,
+  dueDate: string,
+  paymentLink: string,
+  description?: string,
+  propertyAddress?: string
+) => {
+  const subject = `Invoice & Payment Link - Cereno Homes`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <h2 style="color: #0f172a;">Cereno Homes Payment Request</h2>
+      <p>Hello <strong>${clientName}</strong>,</p>
+      <p>An invoice has been generated for your property${propertyAddress ? ` at <strong>${propertyAddress}</strong>` : ''}.</p>
+      
+      <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0;">
+        <p style="margin: 0 0 8px 0;"><strong>Amount Due:</strong> ${currency} ${Number(amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+        <p style="margin: 0 0 8px 0;"><strong>Due Date:</strong> ${dueDate}</p>
+        ${description ? `<p style="margin: 0;"><strong>Details:</strong> ${description}</p>` : ''}
+      </div>
+
+      <p>Click the secure link below to make your payment directly with Stripe (Credit/Debit Card, Apple Pay, Google Pay):</p>
+      
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${paymentLink}" style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+          Pay Invoice Now
+        </a>
+      </div>
+
+      <p style="font-size: 13px; color: #64748b;">Or copy and paste this link into your browser:<br/><a href="${paymentLink}">${paymentLink}</a></p>
+
+      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 25px 0;" />
+      <p style="color: #94a3b8; font-size: 12px;">Cereno Homes &bull; Premium Real Estate Solutions</p>
+    </div>
+  `;
+  await sendEmail(to, subject, html);
+};

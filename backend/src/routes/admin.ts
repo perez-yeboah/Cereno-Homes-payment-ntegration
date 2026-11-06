@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { generateReceiptPDF } from '../services/receiptEngine';
+import { PaymentFactory } from '../services/paymentFactory';
+import { sendInvoicePaymentLinkEmail } from '../services/emailService';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -79,6 +81,249 @@ router.get('/invoices/overdue', async (req, res) => {
   } catch (error) {
     console.error('Error fetching overdue invoices:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get all invoices with client, property, and plan details
+router.get('/invoices', async (req, res) => {
+  try {
+    const invoices = await prisma.invoice.findMany({
+      include: {
+        paymentPlan: {
+          include: {
+            client: true,
+            property: true,
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const today = new Date();
+    const formatted = invoices.map(inv => {
+      const isOverdue = !inv.isPaid && new Date(inv.dueDate) < today;
+      return {
+        id: inv.id,
+        paymentPlanId: inv.paymentPlanId,
+        clientName: inv.paymentPlan.client.name,
+        clientEmail: inv.paymentPlan.client.email,
+        clientPhone: inv.paymentPlan.client.phone,
+        propertyAddress: inv.paymentPlan.property.address || 'Unknown Address',
+        amountDue: Number(inv.amountDue),
+        currency: inv.paymentPlan.currency || 'USD',
+        dueDate: inv.dueDate,
+        isPaid: inv.isPaid,
+        isOverdue,
+        createdAt: inv.createdAt,
+      };
+    });
+
+    res.json(formatted);
+  } catch (error) {
+    console.error('Error fetching admin invoices:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Generate an invoice with a Stripe payment link for a client's plan
+router.post('/invoices/generate-link', async (req, res) => {
+  const { paymentPlanId, amount, dueDate, description, sendEmail: shouldSendEmail = true } = req.body;
+
+  if (!paymentPlanId || !amount || !dueDate) {
+    return res.status(400).json({ error: 'paymentPlanId, amount, and dueDate are required' });
+  }
+
+  try {
+    const plan = await prisma.paymentPlan.findUnique({
+      where: { id: paymentPlanId },
+      include: { client: true, property: true }
+    });
+
+    if (!plan) {
+      return res.status(404).json({ error: 'Payment plan not found' });
+    }
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ error: 'Amount must be a positive number' });
+    }
+
+    // 1. Create Invoice record
+    const invoice = await prisma.invoice.create({
+      data: {
+        paymentPlanId: plan.id,
+        amountDue: numAmount,
+        dueDate: new Date(dueDate),
+        isPaid: false,
+      }
+    });
+
+    // 2. Create Pending Payment record
+    const reference = `inv_${invoice.id}_${Date.now()}`;
+    const currency = plan.currency || 'USD';
+
+    const payment = await prisma.payment.create({
+      data: {
+        provider: 'STRIPE',
+        providerTransactionId: reference,
+        status: 'PENDING',
+        originalCurrency: currency,
+        originalAmount: numAmount,
+      }
+    });
+
+    // 3. Initialize Stripe Checkout Session via StripeService
+    const stripeProvider = PaymentFactory.getProvider('stripe');
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const callbackUrl = `${frontendUrl}/payment/verify`;
+
+    const invoiceDesc = description || `Cereno Homes - Invoice for ${plan.property.address || 'Property'}`;
+    const paymentData = await stripeProvider.initializePayment(
+      plan.client.email,
+      numAmount,
+      currency,
+      reference,
+      callbackUrl,
+      {
+        invoiceId: invoice.id,
+        paymentPlanId: plan.id,
+        description: invoiceDesc,
+      }
+    );
+
+    // Update payment with actual session ID if available
+    if (paymentData.sessionId) {
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { providerTransactionId: paymentData.sessionId }
+      });
+    }
+
+    const paymentLink = paymentData.authorization_url || paymentData.checkoutUrl;
+
+    // 4. Optionally email link to client
+    if (shouldSendEmail && plan.client.email && paymentLink) {
+      await sendInvoicePaymentLinkEmail(
+        plan.client.email,
+        plan.client.name,
+        numAmount,
+        currency,
+        new Date(dueDate).toLocaleDateString(),
+        paymentLink,
+        invoiceDesc,
+        plan.property.address || undefined
+      );
+    }
+
+    res.status(201).json({
+      message: 'Invoice and payment link generated successfully',
+      invoice: {
+        id: invoice.id,
+        paymentPlanId: invoice.paymentPlanId,
+        amountDue: Number(invoice.amountDue),
+        dueDate: invoice.dueDate,
+        isPaid: invoice.isPaid,
+        clientName: plan.client.name,
+        clientEmail: plan.client.email,
+        propertyAddress: plan.property.address,
+      },
+      paymentLink,
+      sessionId: paymentData.sessionId,
+      reference,
+    });
+  } catch (error: any) {
+    console.error('Error generating invoice payment link:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate invoice payment link' });
+  }
+});
+
+// Generate or regenerate payment link for an existing invoice
+router.post('/invoices/:id/payment-link', async (req, res) => {
+  const { id } = req.params;
+  const { sendEmail: shouldSendEmail = false, description } = req.body;
+
+  try {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: {
+        paymentPlan: {
+          include: { client: true, property: true }
+        }
+      }
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    if (invoice.isPaid) {
+      return res.status(400).json({ error: 'Invoice is already paid' });
+    }
+
+    const plan = invoice.paymentPlan;
+    const reference = `inv_${invoice.id}_${Date.now()}`;
+    const currency = plan.currency || 'USD';
+    const numAmount = Number(invoice.amountDue);
+
+    const payment = await prisma.payment.create({
+      data: {
+        provider: 'STRIPE',
+        providerTransactionId: reference,
+        status: 'PENDING',
+        originalCurrency: currency,
+        originalAmount: numAmount,
+      }
+    });
+
+    const stripeProvider = PaymentFactory.getProvider('stripe');
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const callbackUrl = `${frontendUrl}/payment/verify`;
+    const invoiceDesc = description || `Cereno Homes - Invoice for ${plan.property.address || 'Property'}`;
+
+    const paymentData = await stripeProvider.initializePayment(
+      plan.client.email,
+      numAmount,
+      currency,
+      reference,
+      callbackUrl,
+      {
+        invoiceId: invoice.id,
+        paymentPlanId: plan.id,
+        description: invoiceDesc,
+      }
+    );
+
+    if (paymentData.sessionId) {
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: { providerTransactionId: paymentData.sessionId }
+      });
+    }
+
+    const paymentLink = paymentData.authorization_url || paymentData.checkoutUrl;
+
+    if (shouldSendEmail && plan.client.email && paymentLink) {
+      await sendInvoicePaymentLinkEmail(
+        plan.client.email,
+        plan.client.name,
+        numAmount,
+        currency,
+        new Date(invoice.dueDate).toLocaleDateString(),
+        paymentLink,
+        invoiceDesc,
+        plan.property.address || undefined
+      );
+    }
+
+    res.json({
+      message: 'Payment link generated successfully',
+      paymentLink,
+      sessionId: paymentData.sessionId,
+      reference,
+    });
+  } catch (error: any) {
+    console.error('Error creating payment link for invoice:', error);
+    res.status(500).json({ error: error.message || 'Failed to generate payment link' });
   }
 });
 

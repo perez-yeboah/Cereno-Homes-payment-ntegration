@@ -35,6 +35,18 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+const apiRouter = express.Router();
+apiRouter.use('/auth', authRoutes);
+apiRouter.use('/client', clientRoutes);
+apiRouter.use('/payments', paymentRoutes);
+apiRouter.use('/webhooks', webhookRoutes);
+apiRouter.use('/plans', planRoutes);
+apiRouter.use('/properties', propertyRoutes);
+apiRouter.use('/admin', authenticateToken, adminRoutes);
+
+app.use('/api', apiRouter);
+
+// Root level mounts for backwards compatibility
 app.use('/auth', authRoutes);
 app.use('/client', clientRoutes);
 app.use('/payments', paymentRoutes);

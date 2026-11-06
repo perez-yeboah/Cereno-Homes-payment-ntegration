@@ -56,7 +56,7 @@ const ClientPortal: React.FC = () => {
         const result = await chargeSavedCard({
           paymentPlanId: data.paymentPlanId,
           amount: data.amount,
-          currency: 'GHS',
+          currency: 'USD',
           savedCardId: selectedCardId
         });
         setSuccessMsg(`Payment charged successfully! Reference: ${result.reference}`);

@@ -21,6 +21,7 @@ async function handleSuccessfulPayment(tx: any, {
   currency,
   paymentPlanId,
   propertyInterestId,
+  invoiceId,
   authorization
 }: {
   reference: string;
@@ -29,6 +30,7 @@ async function handleSuccessfulPayment(tx: any, {
   currency: string;
   paymentPlanId?: string;
   propertyInterestId?: string;
+  invoiceId?: string;
   authorization?: any;
 }) {
   const payment = await tx.payment.findFirst({
@@ -117,6 +119,17 @@ async function handleSuccessfulPayment(tx: any, {
         });
       }
 
+      if (invoiceId) {
+        try {
+          await tx.invoice.update({
+            where: { id: invoiceId },
+            data: { isPaid: true }
+          });
+        } catch (invErr) {
+          console.warn('Could not mark invoice as paid in webhook:', invErr);
+        }
+      }
+
       if (authorization && authorization.reusable) {
         const existingCard = await tx.savedCard.findFirst({
           where: {
@@ -169,6 +182,29 @@ router.post('/stripe', async (req, res) => {
         const settledCurrency = (session.currency || 'usd').toUpperCase();
         const paymentPlanId = session.metadata?.paymentPlanId;
         const propertyInterestId = session.metadata?.propertyInterestId;
+        const invoiceId = session.metadata?.invoiceId;
+
+        let authorization: any = null;
+        if (session.payment_intent) {
+          try {
+            const piId = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent.id;
+            const pi = await stripe.paymentIntents.retrieve(piId, { expand: ['payment_method'] });
+            const pm = pi.payment_method as Stripe.PaymentMethod | null;
+            if (pm && pm.card) {
+              authorization = {
+                reusable: true,
+                authorization_code: pm.id,
+                last4: pm.card.last4,
+                card_type: pm.card.brand,
+                exp_month: String(pm.card.exp_month),
+                exp_year: String(pm.card.exp_year),
+                bank: pm.card.issuer || pm.card.brand,
+              };
+            }
+          } catch (e) {
+            console.warn('Could not extract payment method in webhook:', e);
+          }
+        }
 
         await prisma.$transaction(async (tx) => {
           await handleSuccessfulPayment(tx, {
@@ -178,6 +214,8 @@ router.post('/stripe', async (req, res) => {
             currency: settledCurrency,
             paymentPlanId,
             propertyInterestId,
+            invoiceId,
+            authorization,
           });
         });
       }
@@ -188,6 +226,7 @@ router.post('/stripe', async (req, res) => {
       const settledCurrency = (paymentIntent.currency || 'usd').toUpperCase();
       const paymentPlanId = paymentIntent.metadata?.paymentPlanId;
       const propertyInterestId = paymentIntent.metadata?.propertyInterestId;
+      const invoiceId = paymentIntent.metadata?.invoiceId;
 
       await prisma.$transaction(async (tx) => {
         await handleSuccessfulPayment(tx, {
@@ -196,6 +235,7 @@ router.post('/stripe', async (req, res) => {
           currency: settledCurrency,
           paymentPlanId,
           propertyInterestId,
+          invoiceId,
         });
       });
     }

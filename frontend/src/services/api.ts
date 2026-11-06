@@ -52,6 +52,27 @@ export const fetchOverdueInvoices = async () => {
   return response.data;
 };
 
+export const fetchAllInvoices = async () => {
+  const response = await api.get('/admin/invoices');
+  return response.data;
+};
+
+export const createInvoicePaymentLink = async (data: {
+  paymentPlanId: string;
+  amount: number;
+  dueDate: string;
+  description?: string;
+  sendEmail?: boolean;
+}) => {
+  const response = await api.post('/admin/invoices/generate-link', data);
+  return response.data;
+};
+
+export const regenerateInvoicePaymentLink = async (invoiceId: string, sendEmail: boolean = false) => {
+  const response = await api.post(`/admin/invoices/${invoiceId}/payment-link`, { sendEmail });
+  return response.data;
+};
+
 // Properties
 export const fetchProperties = async () => {
   const response = await api.get('/properties');
@@ -87,6 +108,33 @@ export const fetchAdminProperties = async () => {
 export const fetchLiveTransactions = async () => {
   const response = await api.get('/admin/transactions');
   return response.data;
+};
+
+export const recordManualPayment = async (data: {
+  paymentPlanId: string;
+  amountGHS: number;
+  originalCurrency?: string;
+  originalAmount?: number;
+  reference?: string;
+  date?: string;
+}) => {
+  const response = await api.post('/admin/manual-entry', data);
+  return response.data;
+};
+
+export const downloadPaymentReceipt = async (paymentId: string) => {
+  const response = await api.get(`/admin/receipt/${paymentId}`, {
+    responseType: 'blob'
+  });
+  const blob = new Blob([response.data], { type: 'application/pdf' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `CerenoHomes_Receipt_${paymentId.substring(0, 8)}.pdf`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 };
 
 export const createProperty = async (data: any) => {
