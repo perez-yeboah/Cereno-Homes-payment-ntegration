@@ -8,6 +8,8 @@ import Login from './components/Login';
 import Landing from './components/Landing';
 import PaymentVerify from './components/PaymentVerify';
 
+import { ToastProvider } from './context/ToastContext';
+
 const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -62,29 +64,31 @@ const Navigation = () => {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Router>
-        <div className="font-sans antialiased bg-brand-surface text-slate-100 min-h-screen flex flex-col">
-          <Navigation />
-          
-          <main className="flex-1 flex flex-col">
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/client-login" element={<ClientLogin />} />
-              <Route path="/dashboard" element={<ClientDashboard />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/payment/verify" element={<PaymentVerify />} />
-              <Route 
-                path="/admin" 
-                element={
-                  <ProtectedRoute>
-                    <AdminDashboard />
-                  </ProtectedRoute>
-                } 
-              />
-            </Routes>
-          </main>
-        </div>
-      </Router>
+      <ToastProvider>
+        <Router>
+          <div className="font-sans antialiased bg-brand-surface text-slate-100 min-h-screen flex flex-col">
+            <Navigation />
+            
+            <main className="flex-1 flex flex-col">
+              <Routes>
+                <Route path="/" element={<Landing />} />
+                <Route path="/client-login" element={<ClientLogin />} />
+                <Route path="/dashboard" element={<ClientDashboard />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/payment/verify" element={<PaymentVerify />} />
+                <Route 
+                  path="/admin" 
+                  element={
+                    <ProtectedRoute>
+                      <AdminDashboard />
+                    </ProtectedRoute>
+                  } 
+                />
+              </Routes>
+            </main>
+          </div>
+        </Router>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

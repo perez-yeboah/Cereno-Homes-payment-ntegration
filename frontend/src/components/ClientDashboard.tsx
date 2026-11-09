@@ -2,11 +2,10 @@ import React, { useEffect, useState } from 'react';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { initializePayment, cancelClientApplication, fetchClientPlans } from '../services/api';
+import api, { initializePayment, cancelClientApplication, fetchClientPlans } from '../services/api';
 import RentToOwnForm from './forms/RentToOwnForm';
 import PayToOwnForm from './forms/PayToOwnForm';
-
-import api from '../services/api';
+import { useToast } from '../context/ToastContext';
 
 const fetchProperties = async () => {
   const { data } = await api.get('/client/properties');
@@ -20,12 +19,14 @@ const fetchInterests = async (token: string | null) => {
 };
 
 const ClientDashboard: React.FC = () => {
+  const { showToast } = useToast();
   const [selectedProperty, setSelectedProperty] = useState<any>(null);
   const [showApplicationTypeModal, setShowApplicationTypeModal] = useState(false);
   const [selectedApplicationType, setSelectedApplicationType] = useState<string | null>(null);
   const [selectedApprovedInterest, setSelectedApprovedInterest] = useState<any>(null);
   const [selectedPlanForLedger, setSelectedPlanForLedger] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentModalError, setPaymentModalError] = useState<string | null>(null);
   
   const [planType, setPlanType] = useState('PAY_TO_OWN');
   const [initialDepositPercentage, setInitialDepositPercentage] = useState<number>(30);
@@ -88,13 +89,16 @@ const ClientDashboard: React.FC = () => {
     onSuccess: (result) => {
       window.location.href = result.authorization_url;
     },
-    onError: () => {
-      alert("Failed to initialize payment.");
+    onError: (err: any) => {
+      const msg = err.response?.data?.error || err.message || "Failed to initialize payment.";
+      setPaymentModalError(msg);
+      showToast("Payment Failed", msg, "error");
     }
   });
 
   const submitInterestMutation = useMutation({
     mutationFn: async (payload: any = formData) => {
+      setPaymentModalError(null);
       // Extract initialDepositPercentage and pass the rest as submittedData
       const { initialDepositPercentage, ...submittedData } = payload;
       
@@ -112,15 +116,20 @@ const ClientDashboard: React.FC = () => {
       setSelectedProperty(null);
       setShowApplicationTypeModal(false);
       setSelectedApplicationType(null);
+      setPaymentSummary(null);
+      setPaymentModalError(null);
       
       if (data.payment && data.payment.authorization_url) {
+        showToast("Redirecting to Stripe", "Opening secure checkout...", "info");
         window.location.href = data.payment.authorization_url;
       } else {
-        alert("Application submitted successfully! Please wait for admin approval.");
+        showToast("Application Submitted", "Application submitted successfully! Please wait for admin approval.", "success");
       }
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || "Failed to submit application");
+      const errorMsg = error.response?.data?.error || error.message || "Failed to submit application";
+      setPaymentModalError(errorMsg);
+      showToast("Application Error", errorMsg, "error");
     }
   });
 
@@ -140,13 +149,16 @@ const ClientDashboard: React.FC = () => {
           provider: 'stripe',
           callbackUrl: `${window.location.origin}/payment/verify`
         });
+        showToast("Redirecting to Stripe", "Opening secure checkout...", "info");
         window.location.href = result.authorization_url;
-      } catch (error) {
-        alert("Plan created, but failed to initialize payment. Please contact support.");
+      } catch (error: any) {
+        const msg = error.response?.data?.error || error.message || "Plan created, but failed to initialize payment. Please contact support.";
+        showToast("Payment Initialization Error", msg, "warning");
       }
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || "Failed to create plan");
+      const msg = error.response?.data?.error || error.message || "Failed to create plan";
+      showToast("Plan Creation Error", msg, "error");
     }
   });
 
@@ -156,10 +168,11 @@ const ClientDashboard: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myInterests'] });
-      alert("Application cancelled successfully.");
+      showToast("Application Cancelled", "Application cancelled successfully.", "info");
     },
     onError: (error: any) => {
-      alert(error.response?.data?.error || "Failed to cancel application");
+      const msg = error.response?.data?.error || error.message || "Failed to cancel application";
+      showToast("Cancellation Error", msg, "error");
     }
   });
 
@@ -542,7 +555,7 @@ const ClientDashboard: React.FC = () => {
                         onProceed: () => customPaymentMutation.mutate(amount)
                       });
                     } else {
-                      alert("Please enter a valid amount");
+                      showToast("Invalid Amount", "Please enter a valid amount greater than 0.", "warning");
                     }
                   }}
                   disabled={customPaymentMutation.isPending || !paymentAmount}
@@ -606,6 +619,27 @@ const ClientDashboard: React.FC = () => {
                 <span className="text-xl font-bold text-white">${paymentSummary.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </div>
+
+            {paymentModalError && (
+              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-rose-950/90 via-slate-900 to-slate-900 border border-rose-500/50 shadow-xl shadow-rose-950/30 text-rose-200 text-xs flex items-start gap-3 animate-fade-in">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-rose-300 text-sm mb-0.5">Payment Notice</div>
+                  <div className="text-slate-300 leading-relaxed break-words">{paymentModalError}</div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setPaymentModalError(null)}
+                  className="text-slate-400 hover:text-slate-200 transition p-1"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             <div className="flex gap-4">
               <button 

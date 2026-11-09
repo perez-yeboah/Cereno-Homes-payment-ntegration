@@ -16,8 +16,10 @@ import {
   recordManualPayment,
   downloadPaymentReceipt
 } from '../services/api';
+import { useToast } from '../context/ToastContext';
 
 const AdminDashboard: React.FC = () => {
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<'overview' | 'properties' | 'transactions' | 'invoices' | 'applications'>('overview');
   
   // Overview State
@@ -101,7 +103,7 @@ const AdminDashboard: React.FC = () => {
   const handleCreateInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInvoiceForm.paymentPlanId || !newInvoiceForm.amount || !newInvoiceForm.dueDate) {
-      alert('Please fill in all required fields.');
+      showToast('Validation Error', 'Please fill in all required fields.', 'warning');
       return;
     }
 
@@ -135,7 +137,7 @@ const AdminDashboard: React.FC = () => {
       fetchOverdueInvoices().then(data => setInvoices(data.data)).catch(console.error);
     } catch (error: any) {
       console.error('Failed to create invoice payment link', error);
-      alert(error.response?.data?.error || 'Failed to create invoice payment link: ' + error.message);
+      showToast('Invoice Creation Error', error.response?.data?.error || error.message || 'Failed to create invoice payment link', 'error');
     }
   };
 
@@ -148,14 +150,14 @@ const AdminDashboard: React.FC = () => {
         setCopiedLinkId(invoiceId);
         setTimeout(() => setCopiedLinkId(null), 3000);
         if (sendEmail) {
-          alert('Payment link copied to clipboard and emailed to client!');
+          showToast('Payment Link Ready', 'Payment link copied to clipboard and emailed to client!', 'success');
         } else {
-          alert('Stripe payment link copied to clipboard!');
+          showToast('Copied', 'Stripe payment link copied to clipboard!', 'success');
         }
       }
     } catch (error: any) {
       console.error('Failed to generate link for invoice', error);
-      alert(error.response?.data?.error || 'Failed to generate link: ' + error.message);
+      showToast('Link Generation Error', error.response?.data?.error || error.message || 'Failed to generate link', 'error');
     } finally {
       setGeneratingLinkId(null);
     }
@@ -186,7 +188,7 @@ const AdminDashboard: React.FC = () => {
   const handleRecordManualPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualWireForm.paymentPlanId || !manualWireForm.amount) {
-      alert('Please select a client payment plan and specify the amount.');
+      showToast('Missing Fields', 'Please select a client payment plan and specify the amount.', 'warning');
       return;
     }
 
@@ -208,13 +210,13 @@ const AdminDashboard: React.FC = () => {
         reference: '',
         date: new Date().toISOString().split('T')[0]
       });
-      alert('Bank wire payment recorded successfully!');
+      showToast('Payment Recorded', 'Bank wire payment recorded and ledger updated successfully!', 'success');
 
       await loadTransactions();
       fetchAdminBalances().then(data => setBalances(data.data)).catch(console.error);
     } catch (error: any) {
       console.error('Failed to record manual payment', error);
-      alert(error.response?.data?.error || 'Failed to record manual payment: ' + error.message);
+      showToast('Manual Payment Error', error.response?.data?.error || error.message || 'Failed to record manual payment', 'error');
     }
   };
 
@@ -222,9 +224,10 @@ const AdminDashboard: React.FC = () => {
     setDownloadingReceiptId(paymentId);
     try {
       await downloadPaymentReceipt(paymentId);
+      showToast('Receipt Downloaded', 'PDF payment receipt downloaded successfully.', 'success');
     } catch (error: any) {
       console.error('Failed to download receipt', error);
-      alert('Failed to download receipt: ' + (error.message || 'Error'));
+      showToast('Receipt Download Failed', error.message || 'Failed to download receipt', 'error');
     } finally {
       setDownloadingReceiptId(null);
     }
@@ -279,7 +282,7 @@ const AdminDashboard: React.FC = () => {
       setProperties(data);
     } catch (error: any) {
       console.error('Failed to create property', error);
-      alert(error.response?.data?.error || 'Failed to create property: ' + error.message);
+      showToast('Creation Failed', error.response?.data?.error || error.message || 'Failed to create property', 'error');
     }
   };
 
@@ -304,10 +307,10 @@ const AdminDashboard: React.FC = () => {
       setEditSelectedImages([]);
       const data = await fetchAdminProperties();
       setProperties(data);
-      alert('Property updated successfully!');
+      showToast('Property Updated', 'Property updated successfully!', 'success');
     } catch (error: any) {
       console.error('Failed to update property', error);
-      alert(error.response?.data?.error || 'Failed to update property: ' + error.message);
+      showToast('Update Failed', error.response?.data?.error || error.message || 'Failed to update property', 'error');
     }
   };
 
@@ -318,9 +321,10 @@ const AdminDashboard: React.FC = () => {
       await sendProjectUpdate(showUpdateModal.propertyId, updateData);
       setShowUpdateModal({show: false, propertyId: null});
       setUpdateData({ title: '', content: '' });
-      alert("Update sent successfully!");
-    } catch (error) {
+      showToast('Update Broadcasted', 'Project update sent successfully!', 'success');
+    } catch (error: any) {
       console.error('Failed to send update', error);
+      showToast('Broadcast Failed', error.message || 'Failed to send update', 'error');
     }
   };
 
@@ -328,9 +332,10 @@ const AdminDashboard: React.FC = () => {
     try {
       await updateApplicationStatus(id, status);
       await loadApplications();
-    } catch (error) {
+      showToast('Application Updated', `Application status changed to ${status}.`, 'info');
+    } catch (error: any) {
       console.error('Failed to update status', error);
-      alert('Error updating application status');
+      showToast('Status Error', error.response?.data?.error || 'Error updating application status', 'error');
     }
   };
 
@@ -340,9 +345,10 @@ const AdminDashboard: React.FC = () => {
       await deleteProperty(id);
       const data = await fetchAdminProperties();
       setProperties(data);
+      showToast('Property Deleted', 'Property has been permanently deleted.', 'info');
     } catch (error: any) {
       console.error('Failed to delete property', error);
-      alert(error.response?.data?.error || 'Failed to delete property');
+      showToast('Delete Failed', error.response?.data?.error || 'Failed to delete property', 'error');
     }
   };
 
