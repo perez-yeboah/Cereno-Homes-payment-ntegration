@@ -33,6 +33,7 @@ router.get('/balances', async (req, res) => {
         type: plan.type,
         totalAmount: plan.totalAmount,
         equityAccrued: plan.equityAccrued,
+        currency: plan.currency || plan.property?.currency || 'USD',
         totalPaid,
         balanceRemaining,
       };
@@ -70,6 +71,7 @@ router.get('/invoices/overdue', async (req, res) => {
       invoiceId: invoice.id,
       clientName: invoice.paymentPlan.client.name,
       amountDue: invoice.amountDue,
+      currency: invoice.paymentPlan.currency || 'USD',
       dueDate: invoice.dueDate,
       daysOverdue: Math.floor((today.getTime() - invoice.dueDate.getTime()) / (1000 * 3600 * 24)),
     }));
@@ -226,8 +228,10 @@ router.post('/invoices/generate-link', async (req, res) => {
         clientName: plan.client.name,
         clientEmail: plan.client.email,
         propertyAddress: plan.property.address,
+        currency,
       },
       paymentLink,
+      currency,
       sessionId: paymentData.sessionId,
       reference,
     });

@@ -20,6 +20,13 @@ import { useToast } from '../context/ToastContext';
 
 const AdminDashboard: React.FC = () => {
   const { showToast } = useToast();
+
+  const formatCurrency = (amount: number | string, currency: string = 'USD') => {
+    const num = Number(amount) || 0;
+    const symbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'GHS' ? '₵' : `${currency} `;
+    return `${symbol}${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   const [activeTab, setActiveTab] = useState<'overview' | 'properties' | 'transactions' | 'invoices' | 'applications'>('overview');
   
   // Overview State
@@ -48,7 +55,7 @@ const AdminDashboard: React.FC = () => {
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [generatingLinkId, setGeneratingLinkId] = useState<string | null>(null);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
-  const [generatedLinkResult, setGeneratedLinkResult] = useState<{ url: string; invoiceId: string; clientName: string; amount: number } | null>(null);
+  const [generatedLinkResult, setGeneratedLinkResult] = useState<{ url: string; invoiceId: string; clientName: string; amount: number; currency?: string } | null>(null);
   const [newInvoiceForm, setNewInvoiceForm] = useState({
     paymentPlanId: '',
     amount: '',
@@ -122,6 +129,7 @@ const AdminDashboard: React.FC = () => {
         invoiceId: result.invoice.id,
         clientName: plan?.clientName || result.invoice.clientName || 'Client',
         amount: Number(newInvoiceForm.amount),
+        currency: plan?.currency || result.currency || 'USD',
       });
 
       setShowInvoiceModal(false);
@@ -375,11 +383,17 @@ const AdminDashboard: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <span className="block text-slate-500">Paid to Date</span>
-                    <span className="font-semibold text-brand-secondary">GHS {plan.totalPaid.toFixed(2)}</span>
+                    <span className="font-semibold text-brand-secondary">
+                      {plan.currency === 'USD' ? '$' : plan.currency === 'EUR' ? '€' : plan.currency === 'GHS' ? '₵' : `${plan.currency || 'USD'} `}
+                      {plan.totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                   <div>
                     <span className="block text-slate-500">Remaining</span>
-                    <span className="font-semibold text-slate-300">GHS {plan.balanceRemaining.toFixed(2)}</span>
+                    <span className="font-semibold text-slate-300">
+                      {plan.currency === 'USD' ? '$' : plan.currency === 'EUR' ? '€' : plan.currency === 'GHS' ? '₵' : `${plan.currency || 'USD'} `}
+                      {plan.balanceRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                 </div>
                 <div className="mt-4 w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
@@ -413,7 +427,10 @@ const AdminDashboard: React.FC = () => {
                   <p className="text-sm text-red-400/80">Due: {new Date(invoice.dueDate).toLocaleDateString()}</p>
                 </div>
                 <div className="text-right">
-                  <span className="block font-semibold text-red-400">GHS {Number(invoice.amountDue).toFixed(2)}</span>
+                  <span className="block font-semibold text-red-400">
+                    {invoice.currency === 'USD' ? '$' : invoice.currency === 'EUR' ? '€' : invoice.currency === 'GHS' ? '₵' : `${invoice.currency || 'USD'} `}
+                    {Number(invoice.amountDue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                   <span className="text-xs text-red-500 font-medium">{invoice.daysOverdue} days overdue</span>
                 </div>
               </div>
@@ -1065,14 +1082,14 @@ const AdminDashboard: React.FC = () => {
         <div className="glass-panel p-5 rounded-2xl border border-emerald-500/20 bg-emerald-950/10">
           <span className="text-xs text-emerald-400 font-medium uppercase tracking-wider block mb-1">Paid Invoices</span>
           <div className="text-2xl font-bold text-emerald-400">
-            {allInvoices.filter(i => i.isPaid).length} <span className="text-sm font-normal text-slate-400">({totalPaidInvoicesAmount.toLocaleString()} GHS)</span>
+            {allInvoices.filter(i => i.isPaid).length} <span className="text-sm font-normal text-slate-400">({formatCurrency(totalPaidInvoicesAmount, allInvoices[0]?.currency || 'USD')})</span>
           </div>
           <span className="text-xs text-emerald-500/70 mt-1 block">Successfully settled via Stripe / portal</span>
         </div>
         <div className="glass-panel p-5 rounded-2xl border border-amber-500/20 bg-amber-950/10">
           <span className="text-xs text-amber-400 font-medium uppercase tracking-wider block mb-1">Pending / Overdue</span>
           <div className="text-2xl font-bold text-amber-400">
-            {allInvoices.filter(i => !i.isPaid).length} <span className="text-sm font-normal text-slate-400">({totalPendingInvoicesAmount.toLocaleString()} GHS)</span>
+            {allInvoices.filter(i => !i.isPaid).length} <span className="text-sm font-normal text-slate-400">({formatCurrency(totalPendingInvoicesAmount, allInvoices[0]?.currency || 'USD')})</span>
           </div>
           <span className="text-xs text-amber-500/70 mt-1 block">Awaiting client payment</span>
         </div>
@@ -1255,7 +1272,7 @@ const AdminDashboard: React.FC = () => {
             </div>
 
             <p className="text-sm text-slate-300 mb-4">
-              A secure Stripe Checkout payment link has been created for <strong className="text-white">GHS {generatedLinkResult.amount.toLocaleString()}</strong>. Clients can click this link to pay immediately via Card, Google Pay, or Apple Pay.
+              A secure Stripe Checkout payment link has been created for <strong className="text-white">{formatCurrency(generatedLinkResult.amount, generatedLinkResult.currency || 'USD')}</strong>. Clients can click this link to pay immediately via Card, Google Pay, or Apple Pay.
             </p>
 
             <div className="p-3 bg-slate-900 rounded-xl border border-slate-700/60 mb-6 flex items-center justify-between gap-3">
@@ -1316,7 +1333,7 @@ const AdminDashboard: React.FC = () => {
                   <option value="">-- Choose an active payment plan --</option>
                   {balances.map(b => (
                     <option key={b.planId} value={b.planId}>
-                      {b.clientName} &bull; {b.propertyAddress} (Remaining: GHS {Number(b.balanceRemaining).toLocaleString()})
+                      {b.clientName} &bull; {b.propertyAddress} (Remaining: {formatCurrency(b.balanceRemaining, b.currency || 'USD')})
                     </option>
                   ))}
                 </select>
@@ -1324,7 +1341,9 @@ const AdminDashboard: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Amount to Invoice (GHS) *</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    Amount to Invoice ({balances.find(b => b.planId === newInvoiceForm.paymentPlanId)?.currency || 'USD'}) *
+                  </label>
                   <input
                     required
                     type="number"
@@ -1427,7 +1446,7 @@ const AdminDashboard: React.FC = () => {
                   <option value="">-- Choose an active payment plan --</option>
                   {balances.map(b => (
                     <option key={b.planId} value={b.planId}>
-                      {b.clientName} &bull; {b.propertyAddress} (Remaining: GHS {Number(b.balanceRemaining).toLocaleString()})
+                      {b.clientName} &bull; {b.propertyAddress} (Remaining: {formatCurrency(b.balanceRemaining, b.currency || 'USD')})
                     </option>
                   ))}
                 </select>
@@ -1435,7 +1454,9 @@ const AdminDashboard: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Amount Paid (GHS) *</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    Amount Paid ({balances.find(b => b.planId === manualWireForm.paymentPlanId)?.currency || 'USD'}) *
+                  </label>
                   <input
                     required
                     type="number"
