@@ -7,9 +7,9 @@ import { sendPaymentReceipt } from '../services/emailService';
 const router = Router();
 const prisma = new PrismaClient();
 
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_placeholder';
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder';
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY?.trim() || 'sk_test_placeholder';
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY?.trim() || 'sk_test_placeholder';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET?.trim();
 
 const stripe = new Stripe(STRIPE_SECRET_KEY);
 
@@ -162,7 +162,7 @@ router.post('/stripe', async (req, res) => {
   let event: Stripe.Event;
 
   try {
-    const rawBody = (req as any).rawBody || req.body;
+    const rawBody = (req as any).rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
     if (STRIPE_WEBHOOK_SECRET && sig) {
       event = stripe.webhooks.constructEvent(rawBody, sig as string, STRIPE_WEBHOOK_SECRET);
     } else {
