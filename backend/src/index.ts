@@ -100,6 +100,10 @@ Promise.all([
   dbStartup.property.updateMany({
     where: { basePrice: { gte: 1000000, lt: 20000000 } },
     data: { basePrice: 980000 }
+  }),
+  dbStartup.property.updateMany({
+    where: { id: '7f873d5f-36d6-4ffb-88bb-daa23effaed2', address: null },
+    data: { address: 'Accra' }
   })
 ]).catch((err) => {
   console.warn('[Property Cap Check] Non-fatal property adjustment:', err?.message || err);
