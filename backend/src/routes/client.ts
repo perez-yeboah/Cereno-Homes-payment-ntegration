@@ -195,10 +195,12 @@ router.post('/plans', authenticateClient, async (req: AuthRequest, res) => {
 const InterestCreateSchema = z.object({
   propertyId: z.string().uuid(),
   submittedData: z.record(z.string(), z.any()),
-  initialDepositPercentage: z.number().refine(val => val === 30 || val === 50, {
-    message: "Initial deposit must be either 30% or 50%"
-  }).optional(),
-  provider: z.string().optional().default('stripe')
+  initialDepositPercentage: z.number().min(1).max(100).optional(),
+  paymentMethod: z.enum(['STRIPE', 'WIRE']).optional().default('STRIPE'),
+  provider: z.string().optional().default('stripe'),
+  isFullPayment: z.boolean().optional().default(false),
+  trancheCount: z.number().optional().default(1),
+  trancheIndex: z.number().optional().default(1),
 });
 
 // Submit Application (Show Interest)
@@ -210,7 +212,16 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
     const client = await prisma.client.findUnique({ where: { id: clientId } });
     if (!client) return res.status(404).json({ error: 'Client not found' });
 
-    const { propertyId, submittedData, initialDepositPercentage, provider } = InterestCreateSchema.parse(req.body);
+    const { 
+      propertyId, 
+      submittedData, 
+      initialDepositPercentage, 
+      paymentMethod = 'STRIPE', 
+      provider = 'stripe',
+      isFullPayment = false,
+      trancheCount = 1,
+      trancheIndex = 1
+    } = InterestCreateSchema.parse(req.body);
 
     const property = await prisma.property.findUnique({ where: { id: propertyId } });
     if (!property || property.status !== 'AVAILABLE') {
@@ -242,8 +253,70 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
       }
     });
 
-    // If a deposit percentage was provided, we generate a payment plan and initialize payment
-    if (initialDepositPercentage) {
+    const basePriceNumber = Number(property.basePrice);
+
+    // If Bank Wire was selected
+    if (paymentMethod === 'WIRE') {
+      const depositPct = initialDepositPercentage || (isFullPayment ? 100 : 30);
+      const wireAmount = isFullPayment ? basePriceNumber : basePriceNumber * (depositPct / 100);
+
+      // Create active PaymentPlan
+      const paymentPlan = await prisma.paymentPlan.create({
+        data: {
+          clientId,
+          propertyId,
+          type: planType,
+          totalAmount: property.basePrice,
+          equityAccrued: 0,
+          currency: property.currency,
+          status: 'ACTIVE',
+          scheduleDetails: { paymentMethod: 'WIRE', depositPct, isFullPayment },
+        }
+      });
+
+      const wireRef = `WIRE_${Date.now()}_${Math.random().toString(36).substring(7).toUpperCase()}`;
+
+      // Create a pending wire payment record
+      await prisma.payment.create({
+        data: {
+          provider: 'MANUAL_WIRE',
+          providerTransactionId: wireRef,
+          status: 'PENDING',
+          originalCurrency: property.currency,
+          originalAmount: wireAmount,
+        }
+      });
+
+      // Create an invoice for the wire payment
+      const invoice = await prisma.invoice.create({
+        data: {
+          paymentPlanId: paymentPlan.id,
+          amountDue: wireAmount,
+          dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days for wire arrival
+          isPaid: false,
+        }
+      });
+
+      return res.status(201).json({
+        interest,
+        paymentPlan,
+        invoice,
+        wireTransfer: {
+          reference: wireRef,
+          amount: wireAmount,
+          currency: property.currency,
+          bankName: "Standard Chartered Bank / Guaranty Trust Bank (Ghana)",
+          accountName: "Cereno Homes Limited",
+          accountNumber: "0100234891100",
+          swiftCode: "SCBLGHAC",
+          routingNumber: "020101",
+          instructions: "Please include the reference code in your bank transfer narration. Once received, your payment plan will be marked as paid and an official receipt will be generated."
+        }
+      });
+    }
+
+    // If a deposit percentage or full payment via Stripe was provided
+    if (initialDepositPercentage || isFullPayment) {
       // 2. Create the PaymentPlan automatically
       const paymentPlan = await prisma.paymentPlan.create({
         data: {
@@ -254,13 +327,18 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
           equityAccrued: 0,
           currency: property.currency,
           status: 'ACTIVE',
-          scheduleDetails: {},
+          scheduleDetails: { initialDepositPercentage, isFullPayment, trancheCount },
         }
       });
 
-      // 3. Initialize Payment for the Deposit (Stripe by default)
-      const basePriceNumber = Number(property.basePrice);
-      const amountInOriginalCurrency = basePriceNumber * (initialDepositPercentage / 100);
+      // Calculate amount for this transaction
+      let amountInOriginalCurrency: number;
+      if (isFullPayment) {
+        amountInOriginalCurrency = basePriceNumber / Math.max(1, trancheCount);
+      } else {
+        const pct = initialDepositPercentage || 30;
+        amountInOriginalCurrency = basePriceNumber * (pct / 100);
+      }
 
       let chargeAmount = amountInOriginalCurrency;
       let chargeCurrency = property.currency;
@@ -276,6 +354,23 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
         chargeCurrency = 'GHS';
       }
 
+      // Check Stripe limit ($999,999.99)
+      if (provider.toLowerCase() === 'stripe' && chargeAmount > 999999.99) {
+        return res.status(400).json({ 
+          error: `Single online payment of ${chargeAmount.toLocaleString('en-US', { style: 'currency', currency: chargeCurrency })} exceeds Stripe's $999,999.99 transaction limit. Please select a lower deposit percentage (e.g. 10% - 25%), split into tranches, or choose Bank Wire Transfer.`
+        });
+      }
+
+      // Create an Invoice for this tranche/deposit
+      const invoice = await prisma.invoice.create({
+        data: {
+          paymentPlanId: paymentPlan.id,
+          amountDue: amountInOriginalCurrency,
+          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          isPaid: false,
+        }
+      });
+
       const payment = await prisma.payment.create({
         data: {
           provider: provider.toUpperCase(),
@@ -288,6 +383,10 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
 
       const callbackUrl = process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/payment/verify` : 'http://localhost:5173/payment/verify';
 
+      const description = isFullPayment && trancheCount > 1
+        ? `Cereno Homes - Full Purchase (Tranche ${trancheIndex} of ${trancheCount})`
+        : `Cereno Homes - Initial Deposit (${initialDepositPercentage || 30}%)`;
+
       const paymentProvider = PaymentFactory.getProvider(provider);
       const paymentData = await paymentProvider.initializePayment(
         client.email,
@@ -298,13 +397,15 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
         { 
           paymentPlanId: paymentPlan.id, 
           propertyInterestId: interest.id,
-          description: `Cereno Homes - Initial Deposit (${initialDepositPercentage}%)` 
+          invoiceId: invoice.id,
+          description 
         }
       );
 
       return res.status(201).json({
         interest,
         paymentPlan,
+        invoice,
         payment: {
           authorization_url: paymentData.authorization_url || paymentData.checkoutUrl,
           access_code: paymentData.access_code || paymentData.sessionId,

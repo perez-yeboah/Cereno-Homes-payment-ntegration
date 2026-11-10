@@ -28,6 +28,11 @@ export class StripeService implements IPaymentProvider {
       // Stripe expects amount in the smallest currency unit (e.g. cents for USD/EUR, pesewas for GHS)
       const unitAmount = Math.round(amount * 100);
 
+      // Stripe hard limit: maximum unit amount is 8 digits (99,999,999 cents = $999,999.99)
+      if (unitAmount > 99999999) {
+        throw new Error(`Amount of ${amount.toLocaleString('en-US', { style: 'currency', currency: currency || 'USD' })} exceeds Stripe's maximum single transaction limit ($999,999.99). Please divide into milestone tranches or proceed via Bank Wire Transfer.`);
+      }
+
       // Supported Stripe currencies are lowercase 3-letter ISO codes
       const stripeCurrency = (currency || 'USD').toLowerCase();
 

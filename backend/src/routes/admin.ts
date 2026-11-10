@@ -269,6 +269,12 @@ router.post('/invoices/:id/payment-link', async (req, res) => {
     const currency = plan.currency || 'USD';
     const numAmount = Number(invoice.amountDue);
 
+    if (numAmount > 999999.99) {
+      return res.status(400).json({
+        error: `Invoice amount (${numAmount.toLocaleString('en-US', { style: 'currency', currency })}) exceeds Stripe's maximum single transaction limit of $999,999.99. Please split this into milestone tranches or record as a Bank Wire.`
+      });
+    }
+
     const payment = await prisma.payment.create({
       data: {
         provider: 'STRIPE',
@@ -328,6 +334,66 @@ router.post('/invoices/:id/payment-link', async (req, res) => {
   } catch (error: any) {
     console.error('Error creating payment link for invoice:', error);
     res.status(500).json({ error: error.message || 'Failed to generate payment link' });
+  }
+});
+
+// Split an invoice into multiple equal milestone tranches
+router.post('/invoices/:id/split', async (req, res) => {
+  const { id } = req.params;
+  const { tranches = 2 } = req.body; // default 2 tranches
+
+  const numTranches = Math.max(2, Math.min(10, parseInt(tranches, 10) || 2));
+
+  try {
+    const existingInvoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { paymentPlan: true }
+    });
+
+    if (!existingInvoice) {
+      return res.status(404).json({ error: 'Invoice not found' });
+    }
+
+    if (existingInvoice.isPaid) {
+      return res.status(400).json({ error: 'Cannot split an already paid invoice' });
+    }
+
+    const totalAmount = Number(existingInvoice.amountDue);
+    const trancheBase = Math.floor((totalAmount / numTranches) * 100) / 100;
+    const remainder = Math.round((totalAmount - trancheBase * numTranches) * 100) / 100;
+
+    const baseDueDate = new Date(existingInvoice.dueDate || Date.now());
+
+    // Perform inside transaction: delete original invoice, create new tranche invoices
+    const newInvoices = await prisma.$transaction(async (tx) => {
+      await tx.invoice.delete({ where: { id } });
+
+      const created = [];
+      for (let i = 0; i < numTranches; i++) {
+        // Add remainder to the final tranche to ensure exact total match
+        const amount = i === numTranches - 1 ? Number((trancheBase + remainder).toFixed(2)) : trancheBase;
+        const dueDate = new Date(baseDueDate.getTime() + i * 30 * 24 * 60 * 60 * 1000); // 30 days apart
+
+        const inv = await tx.invoice.create({
+          data: {
+            paymentPlanId: existingInvoice.paymentPlanId,
+            amountDue: amount,
+            dueDate,
+            isPaid: false,
+          }
+        });
+        created.push(inv);
+      }
+      return created;
+    });
+
+    res.json({
+      message: `Invoice split into ${numTranches} tranches successfully`,
+      invoices: newInvoices,
+    });
+  } catch (error: any) {
+    console.error('Error splitting invoice:', error);
+    res.status(500).json({ error: error.message || 'Failed to split invoice' });
   }
 });
 

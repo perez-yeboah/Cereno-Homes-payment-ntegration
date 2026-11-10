@@ -30,12 +30,20 @@ const ClientDashboard: React.FC = () => {
   
   const [planType, setPlanType] = useState('PAY_TO_OWN');
   const [initialDepositPercentage, setInitialDepositPercentage] = useState<number>(30);
+  const [purchaseMode, setPurchaseMode] = useState<'MILESTONE' | 'FULL'>('MILESTONE');
+  const [fullPaymentChoice, setFullPaymentChoice] = useState<'TRANCHES' | 'WIRE'>('TRANCHES');
+  const [wireTransferDetails, setWireTransferDetails] = useState<any>(null);
+  const [copiedWireDetails, setCopiedWireDetails] = useState(false);
   
   const [paymentSummary, setPaymentSummary] = useState<{
     isOpen: boolean;
     totalPrice: number;
     paymentAmount: number;
-    percentage: number;
+    percentage?: number;
+    isFullPayment?: boolean;
+    paymentMethod?: 'STRIPE' | 'WIRE';
+    currency?: string;
+    trancheInfo?: string;
     onProceed: () => void;
   } | null>(null);
 
@@ -77,6 +85,9 @@ const ClientDashboard: React.FC = () => {
 
   const customPaymentMutation = useMutation({
     mutationFn: async (amount: number) => {
+      if (amount > 999999.99) {
+        throw new Error(`Payment amount of $${amount.toLocaleString()} exceeds Stripe's $999,999.99 single transaction limit. Please enter an amount under $999,999 or arrange a Bank Wire Transfer.`);
+      }
       const result = await initializePayment({
         paymentPlanId: selectedPlanForLedger.id,
         amount,
@@ -99,27 +110,39 @@ const ClientDashboard: React.FC = () => {
   const submitInterestMutation = useMutation({
     mutationFn: async (payload: any = formData) => {
       setPaymentModalError(null);
-      // Extract initialDepositPercentage and pass the rest as submittedData
-      const { initialDepositPercentage, ...submittedData } = payload;
+      const { 
+        initialDepositPercentage, 
+        paymentMethod, 
+        isFullPayment, 
+        trancheCount, 
+        trancheIndex,
+        ...submittedData 
+      } = payload;
       
-      const { data } = await api.post('/client/interests', 
-        { 
-          propertyId: selectedProperty.id, 
-          submittedData,
-          initialDepositPercentage 
-        }
-      );
+      const { data } = await api.post('/client/interests', { 
+        propertyId: selectedProperty.id, 
+        submittedData,
+        initialDepositPercentage,
+        paymentMethod: paymentMethod || 'STRIPE',
+        isFullPayment: !!isFullPayment,
+        trancheCount: trancheCount || 1,
+        trancheIndex: trancheIndex || 1,
+      });
       return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['myInterests'] });
+      queryClient.invalidateQueries({ queryKey: ['myPlans'] });
       setSelectedProperty(null);
       setShowApplicationTypeModal(false);
       setSelectedApplicationType(null);
       setPaymentSummary(null);
       setPaymentModalError(null);
       
-      if (data.payment && data.payment.authorization_url) {
+      if (data.wireTransfer) {
+        setWireTransferDetails(data.wireTransfer);
+        showToast("Application & Wire Invoice Created", "Bank transfer invoice generated. Please review wire instructions.", "success");
+      } else if (data.payment && data.payment.authorization_url) {
         showToast("Redirecting to Stripe", "Opening secure checkout...", "info");
         window.location.href = data.payment.authorization_url;
       } else {
@@ -296,9 +319,16 @@ const ClientDashboard: React.FC = () => {
                   </div>
                 )}
                 <div className="flex justify-between items-start mb-2">
-                  <span className={`text-xs px-2 py-1 rounded border ${property.status === 'AVAILABLE' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-slate-700/50 text-slate-300 border-slate-600'}`}>
-                    {property.status}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`text-xs px-2 py-1 rounded border ${property.status === 'AVAILABLE' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-slate-700/50 text-slate-300 border-slate-600'}`}>
+                      {property.status}
+                    </span>
+                    {Number(property.basePrice) >= 1000000 && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded border bg-blue-500/20 text-blue-300 border-blue-500/30">
+                        Milestone Part Payments
+                      </span>
+                    )}
+                  </div>
                   <span className="text-sm font-semibold text-brand-secondary">
                     {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                   </span>
@@ -384,54 +414,268 @@ const ClientDashboard: React.FC = () => {
             <h2 className="text-xl font-semibold mb-2 text-slate-100">
               {selectedApplicationType === 'RENT_TO_OWN' ? 'Rent-To-Own Application' : 'Application Form'}
             </h2>
-            <p className="text-slate-400 text-sm mb-6">Applying for {selectedProperty.address}</p>
-
-            {/* Initial Deposit Selection */}
-            <div className="bg-slate-900/50 border border-slate-700/50 p-4 rounded-xl mb-6">
-              <h3 className="text-sm font-medium text-slate-200 mb-2">Select Initial Deposit</h3>
-              <p className="text-xs text-slate-400 mb-3">Your project commences immediately upon paying this deposit.</p>
-              <div className="flex gap-4">
-                <label className={`flex-1 flex items-center p-3 rounded-lg border cursor-pointer transition-colors ${initialDepositPercentage === 30 ? 'bg-brand-primary/20 border-brand-primary text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
-                  <input 
-                    type="radio" 
-                    name="initialDeposit" 
-                    value="30"
-                    checked={initialDepositPercentage === 30}
-                    onChange={() => setInitialDepositPercentage(30)}
-                    className="mr-3 text-brand-primary focus:ring-brand-primary bg-slate-900 border-slate-600"
-                  />
-                  <div>
-                    <span className="font-semibold block">30% Deposit</span>
-                  </div>
-                </label>
-                <label className={`flex-1 flex items-center p-3 rounded-lg border cursor-pointer transition-colors ${initialDepositPercentage === 50 ? 'bg-brand-primary/20 border-brand-primary text-white' : 'bg-slate-800 border-slate-700 text-slate-300'}`}>
-                  <input 
-                    type="radio" 
-                    name="initialDeposit" 
-                    value="50"
-                    checked={initialDepositPercentage === 50}
-                    onChange={() => setInitialDepositPercentage(50)}
-                    className="mr-3 text-brand-primary focus:ring-brand-primary bg-slate-900 border-slate-600"
-                  />
-                  <div>
-                    <span className="font-semibold block">50% Deposit</span>
-                  </div>
-                </label>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+              <p className="text-slate-400 text-sm">Applying for <span className="text-slate-200 font-medium">{selectedProperty.address}</span></p>
+              <div className="text-right">
+                <span className="text-xs text-slate-500 block">Total Property Price</span>
+                <span className="text-lg font-bold text-brand-secondary">
+                  {selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : 'GHS '}
+                  {Number(selectedProperty.basePrice).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
               </div>
             </div>
 
+            {/* High-Value Property Banner if >= $1M */}
+            {Number(selectedProperty.basePrice) >= 1000000 && (
+              <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-950/60 via-slate-900 to-slate-900 border border-blue-500/30 text-blue-200 text-xs flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0 mt-0.5">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <span className="font-semibold text-blue-300 text-sm block mb-0.5">High-Value Property Payment Architecture</span>
+                  <p className="text-slate-300 leading-relaxed">
+                    Stripe limits single online credit card transactions to $999,999.99. You can choose structured <strong className="text-white">Milestone Part-Payments</strong> or make a full purchase via <strong className="text-white">Equal Split Tranches</strong> or <strong className="text-white">Direct Bank Wire</strong>.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Purchase Mode Selector Tabs */}
+            <div className="bg-slate-900/60 p-1.5 rounded-2xl border border-slate-700/60 flex gap-2 mb-6">
+              <button
+                type="button"
+                onClick={() => setPurchaseMode('MILESTONE')}
+                className={`flex-1 py-2.5 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+                  purchaseMode === 'MILESTONE'
+                    ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>🏗️ Milestone Part-Payments</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPurchaseMode('FULL')}
+                className={`flex-1 py-2.5 px-4 rounded-xl font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+                  purchaseMode === 'FULL'
+                    ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>💎 Full Purchase Options</span>
+              </button>
+            </div>
+
+            {/* Mode 1: Milestone Part-Payments */}
+            {purchaseMode === 'MILESTONE' && (() => {
+              const totalPrice = Number(selectedProperty.basePrice);
+              const candidatePcts = [10, 15, 20, 25, 30, 50];
+              const safePcts = candidatePcts.filter(pct => (totalPrice * (pct / 100)) <= 999999.99);
+              const activePcts = safePcts.length > 0 ? safePcts : [Math.max(1, Math.floor((950000 / totalPrice) * 100))];
+
+              // Ensure initialDepositPercentage is valid in current set
+              if (!activePcts.includes(initialDepositPercentage)) {
+                setInitialDepositPercentage(activePcts[activePcts.length - 1]);
+              }
+
+              const currentDepositAmt = totalPrice * (initialDepositPercentage / 100);
+              const currSymbol = selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : 'GHS ';
+
+              return (
+                <div className="bg-slate-900/50 border border-slate-700/50 p-5 rounded-2xl mb-6">
+                  <div className="flex justify-between items-center mb-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-200">Select Initial Milestone Deposit</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Project commencement begins upon payment of this deposit.</p>
+                    </div>
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                      Stripe Online Approved (≤ $999k)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                    {activePcts.map((pct) => {
+                      const amount = totalPrice * (pct / 100);
+                      const isSelected = initialDepositPercentage === pct;
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setInitialDepositPercentage(pct)}
+                          className={`p-3 rounded-xl border text-left transition-all ${
+                            isSelected
+                              ? 'bg-brand-primary/20 border-brand-primary text-white shadow-lg shadow-brand-primary/10'
+                              : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:border-slate-500'
+                          }`}
+                        >
+                          <div className="font-bold text-sm">{pct}% Deposit</div>
+                          <div className="text-xs text-slate-300 mt-1 font-mono font-medium">
+                            {currSymbol}{amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Real Estate Milestone Roadmap Preview */}
+                  <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 text-xs">
+                    <span className="font-semibold text-slate-300 block mb-2">Structured Milestone Schedule:</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-slate-400">
+                      <div className="p-2.5 rounded-lg bg-brand-primary/10 border border-brand-primary/30">
+                        <span className="text-brand-primary font-bold block mb-0.5">Milestone 1 (Now)</span>
+                        <span className="text-slate-200 font-medium">{currSymbol}{currentDepositAmt.toLocaleString()}</span>
+                        <span className="block text-[11px] text-slate-400 mt-0.5">Initial Allocation & Signing</span>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                        <span className="text-slate-400 font-bold block mb-0.5">Milestone 2</span>
+                        <span className="text-slate-300 font-medium">Structured Tranche</span>
+                        <span className="block text-[11px] text-slate-500 mt-0.5">Substructure & Superstructure</span>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                        <span className="text-slate-400 font-bold block mb-0.5">Milestone 3</span>
+                        <span className="text-slate-300 font-medium">Final Balance</span>
+                        <span className="block text-[11px] text-slate-500 mt-0.5">Roofing, Finishing & Keys</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Mode 2: Full Purchase Options */}
+            {purchaseMode === 'FULL' && (() => {
+              const totalPrice = Number(selectedProperty.basePrice);
+              const currSymbol = selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : 'GHS ';
+              const isHigh = totalPrice >= 1000000;
+              const fullTranches = Math.max(2, Math.ceil(totalPrice / 900000));
+              const trancheAmt = Math.round((totalPrice / fullTranches) * 100) / 100;
+
+              return (
+                <div className="bg-slate-900/50 border border-slate-700/50 p-5 rounded-2xl mb-6">
+                  <h3 className="text-sm font-semibold text-slate-200 mb-1">Choose Full Purchase Payment Method</h3>
+                  <p className="text-xs text-slate-400 mb-4">
+                    {isHigh 
+                      ? `Since property exceeds $1M, choose between equal online Stripe tranches or direct Bank Wire.`
+                      : `Select how you would like to complete your full payment.`}
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Option 1: Tranches or Single Stripe */}
+                    <div
+                      onClick={() => setFullPaymentChoice('TRANCHES')}
+                      className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                        fullPaymentChoice === 'TRANCHES'
+                          ? 'bg-brand-primary/20 border-brand-primary text-white shadow-lg'
+                          : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-base">💳</span>
+                        <span className="font-semibold text-sm">
+                          {isHigh ? `Multi-Tranche Stripe (${fullTranches} Parts)` : `Stripe Online Payment`}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 leading-relaxed">
+                        {isHigh ? (
+                          <>
+                            Split into <strong className="text-white">{fullTranches} equal payments</strong> of <strong className="text-brand-secondary">{currSymbol}{trancheAmt.toLocaleString()}</strong> each. Tranche 1 payable now via Stripe.
+                          </>
+                        ) : (
+                          <>Pay the full balance of <strong className="text-brand-secondary">{currSymbol}{totalPrice.toLocaleString()}</strong> immediately in a single secure Stripe transaction.</>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Option 2: Bank Wire */}
+                    <div
+                      onClick={() => setFullPaymentChoice('WIRE')}
+                      className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                        fullPaymentChoice === 'WIRE'
+                          ? 'bg-brand-primary/20 border-brand-primary text-white shadow-lg'
+                          : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-base">🏛️</span>
+                        <span className="font-semibold text-sm">Direct Bank Wire Transfer</span>
+                      </div>
+                      <div className="text-xs text-slate-400 leading-relaxed">
+                        Instant corporate Wire Invoice for <strong className="text-amber-300">{currSymbol}{totalPrice.toLocaleString()}</strong> with SWIFT & routing details. Zero transaction limits or card fees.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Application Forms with Updated Submissions */}
             {selectedApplicationType === 'RENT_TO_OWN' ? (
               <RentToOwnForm 
                 onSubmit={(data) => {
                   const totalPrice = Number(selectedProperty.basePrice);
-                  const amount = totalPrice * (initialDepositPercentage / 100);
-                  setPaymentSummary({
-                    isOpen: true,
-                    totalPrice,
-                    paymentAmount: amount,
-                    percentage: initialDepositPercentage,
-                    onProceed: () => submitInterestMutation.mutate({...data, initialDepositPercentage})
-                  });
+                  const isHigh = totalPrice >= 1000000;
+                  const fullTranches = Math.max(2, Math.ceil(totalPrice / 900000));
+                  const trancheAmt = Math.round((totalPrice / fullTranches) * 100) / 100;
+
+                  if (purchaseMode === 'MILESTONE') {
+                    const amount = totalPrice * (initialDepositPercentage / 100);
+                    setPaymentSummary({
+                      isOpen: true,
+                      totalPrice,
+                      paymentAmount: amount,
+                      percentage: initialDepositPercentage,
+                      isFullPayment: false,
+                      paymentMethod: 'STRIPE',
+                      currency: selectedProperty.currency || 'USD',
+                      trancheInfo: `Milestone Initial Deposit (${initialDepositPercentage}%)`,
+                      onProceed: () => submitInterestMutation.mutate({
+                        ...data,
+                        initialDepositPercentage,
+                        paymentMethod: 'STRIPE',
+                        isFullPayment: false
+                      })
+                    });
+                  } else if (purchaseMode === 'FULL') {
+                    if (fullPaymentChoice === 'WIRE') {
+                      setPaymentSummary({
+                        isOpen: true,
+                        totalPrice,
+                        paymentAmount: totalPrice,
+                        percentage: 100,
+                        isFullPayment: true,
+                        paymentMethod: 'WIRE',
+                        currency: selectedProperty.currency || 'USD',
+                        trancheInfo: `Full Purchase via Bank Wire Transfer`,
+                        onProceed: () => submitInterestMutation.mutate({
+                          ...data,
+                          paymentMethod: 'WIRE',
+                          isFullPayment: true,
+                          initialDepositPercentage: 100
+                        })
+                      });
+                    } else {
+                      const amount = isHigh ? trancheAmt : totalPrice;
+                      setPaymentSummary({
+                        isOpen: true,
+                        totalPrice,
+                        paymentAmount: amount,
+                        percentage: isHigh ? Math.round(100 / fullTranches) : 100,
+                        isFullPayment: true,
+                        paymentMethod: 'STRIPE',
+                        currency: selectedProperty.currency || 'USD',
+                        trancheInfo: isHigh ? `Full Purchase (Tranche 1 of ${fullTranches})` : `Full 100% Purchase`,
+                        onProceed: () => submitInterestMutation.mutate({
+                          ...data,
+                          paymentMethod: 'STRIPE',
+                          isFullPayment: true,
+                          trancheCount: isHigh ? fullTranches : 1,
+                          trancheIndex: 1
+                        })
+                      });
+                    }
+                  }
                 }}
                 onCancel={() => {
                   setSelectedProperty(null);
@@ -444,14 +688,67 @@ const ClientDashboard: React.FC = () => {
               <PayToOwnForm 
                 onSubmit={(data) => {
                   const totalPrice = Number(selectedProperty.basePrice);
-                  const amount = totalPrice * (initialDepositPercentage / 100);
-                  setPaymentSummary({
-                    isOpen: true,
-                    totalPrice,
-                    paymentAmount: amount,
-                    percentage: initialDepositPercentage,
-                    onProceed: () => submitInterestMutation.mutate({...data, initialDepositPercentage})
-                  });
+                  const isHigh = totalPrice >= 1000000;
+                  const fullTranches = Math.max(2, Math.ceil(totalPrice / 900000));
+                  const trancheAmt = Math.round((totalPrice / fullTranches) * 100) / 100;
+
+                  if (purchaseMode === 'MILESTONE') {
+                    const amount = totalPrice * (initialDepositPercentage / 100);
+                    setPaymentSummary({
+                      isOpen: true,
+                      totalPrice,
+                      paymentAmount: amount,
+                      percentage: initialDepositPercentage,
+                      isFullPayment: false,
+                      paymentMethod: 'STRIPE',
+                      currency: selectedProperty.currency || 'USD',
+                      trancheInfo: `Milestone Initial Deposit (${initialDepositPercentage}%)`,
+                      onProceed: () => submitInterestMutation.mutate({
+                        ...data,
+                        initialDepositPercentage,
+                        paymentMethod: 'STRIPE',
+                        isFullPayment: false
+                      })
+                    });
+                  } else if (purchaseMode === 'FULL') {
+                    if (fullPaymentChoice === 'WIRE') {
+                      setPaymentSummary({
+                        isOpen: true,
+                        totalPrice,
+                        paymentAmount: totalPrice,
+                        percentage: 100,
+                        isFullPayment: true,
+                        paymentMethod: 'WIRE',
+                        currency: selectedProperty.currency || 'USD',
+                        trancheInfo: `Full Purchase via Bank Wire Transfer`,
+                        onProceed: () => submitInterestMutation.mutate({
+                          ...data,
+                          paymentMethod: 'WIRE',
+                          isFullPayment: true,
+                          initialDepositPercentage: 100
+                        })
+                      });
+                    } else {
+                      const amount = isHigh ? trancheAmt : totalPrice;
+                      setPaymentSummary({
+                        isOpen: true,
+                        totalPrice,
+                        paymentAmount: amount,
+                        percentage: isHigh ? Math.round(100 / fullTranches) : 100,
+                        isFullPayment: true,
+                        paymentMethod: 'STRIPE',
+                        currency: selectedProperty.currency || 'USD',
+                        trancheInfo: isHigh ? `Full Purchase (Tranche 1 of ${fullTranches})` : `Full 100% Purchase`,
+                        onProceed: () => submitInterestMutation.mutate({
+                          ...data,
+                          paymentMethod: 'STRIPE',
+                          isFullPayment: true,
+                          trancheCount: isHigh ? fullTranches : 1,
+                          trancheIndex: 1
+                        })
+                      });
+                    }
+                  }
                 }}
                 onCancel={() => {
                   setSelectedProperty(null);
@@ -606,17 +903,32 @@ const ClientDashboard: React.FC = () => {
             <div className="space-y-4 mb-8">
               <div className="flex justify-between items-center p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
                 <span className="text-slate-400">Total Property Price</span>
-                <span className="text-slate-200 font-medium">${paymentSummary.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="text-slate-200 font-medium">
+                  {paymentSummary.currency === 'USD' ? '$' : paymentSummary.currency === 'EUR' ? '€' : 'GHS '}
+                  {paymentSummary.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
               </div>
               
               <div className="flex justify-between items-center p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
-                <span className="text-slate-400">Percentage Paying</span>
-                <span className="text-brand-primary font-medium">{paymentSummary.percentage.toFixed(2)}%</span>
+                <span className="text-slate-400">Payment Breakdown</span>
+                <span className="text-brand-primary font-medium text-right text-xs">
+                  {paymentSummary.trancheInfo || `${paymentSummary.percentage?.toFixed(1)}% Deposit`}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                <span className="text-slate-400">Method</span>
+                <span className="text-slate-300 font-medium text-xs flex items-center gap-1.5">
+                  {paymentSummary.paymentMethod === 'WIRE' ? '🏛️ Bank Wire Transfer' : '💳 Stripe Checkout'}
+                </span>
               </div>
               
               <div className="flex justify-between items-center p-4 bg-slate-900/80 rounded-xl border border-brand-primary/50">
                 <span className="text-slate-200 font-medium">Amount to Pay</span>
-                <span className="text-xl font-bold text-white">${paymentSummary.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="text-xl font-bold text-white">
+                  {paymentSummary.currency === 'USD' ? '$' : paymentSummary.currency === 'EUR' ? '€' : 'GHS '}
+                  {paymentSummary.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
               </div>
             </div>
 
@@ -654,7 +966,111 @@ const ClientDashboard: React.FC = () => {
                 disabled={submitInterestMutation.isPending || customPaymentMutation.isPending}
                 className="flex-1 bg-brand-primary hover:bg-brand-primary/90 text-white py-3 rounded-xl transition-colors font-medium flex items-center justify-center gap-2"
               >
-                {submitInterestMutation.isPending || customPaymentMutation.isPending ? 'Processing...' : 'Pay via Stripe'}
+                {submitInterestMutation.isPending || customPaymentMutation.isPending 
+                  ? 'Processing...' 
+                  : paymentSummary.paymentMethod === 'WIRE' 
+                    ? 'Generate Wire Invoice' 
+                    : 'Proceed to Stripe'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wire Transfer Details Modal */}
+      {wireTransferDetails && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 z-[70] overflow-y-auto">
+          <div className="bg-brand-surface border border-slate-700/70 p-8 rounded-3xl w-full max-w-lg shadow-2xl my-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-100">Bank Wire Instructions</h2>
+                  <p className="text-xs text-slate-400">Official invoice generated for your property purchase</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setWireTransferDetails(null)}
+                className="text-slate-400 hover:text-slate-200 transition p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-gradient-to-br from-amber-500/10 via-slate-900/60 to-slate-900 border border-amber-500/30 p-4 rounded-2xl mb-6">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Total Wire Amount</span>
+                <span className="text-xl font-extrabold text-amber-300">
+                  {wireTransferDetails.currency === 'USD' ? '$' : wireTransferDetails.currency === 'EUR' ? '€' : 'GHS '}
+                  {Number(wireTransferDetails.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-xs text-slate-400">
+                <span>Wire Reference Code:</span>
+                <span className="font-mono font-bold text-slate-200 bg-slate-800 px-2 py-0.5 rounded">{wireTransferDetails.reference}</span>
+              </div>
+            </div>
+
+            <div className="space-y-3 bg-slate-900/60 p-5 rounded-2xl border border-slate-700/60 text-sm mb-6">
+              <div className="flex justify-between py-1 border-b border-slate-800">
+                <span className="text-slate-400 text-xs">Beneficiary Bank:</span>
+                <span className="text-slate-200 font-medium text-right text-xs">{wireTransferDetails.bankName}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-800">
+                <span className="text-slate-400 text-xs">Account Name:</span>
+                <span className="text-slate-200 font-medium text-right text-xs">{wireTransferDetails.accountName}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-800">
+                <span className="text-slate-400 text-xs">Account Number / IBAN:</span>
+                <span className="text-slate-100 font-mono font-bold text-right text-xs">{wireTransferDetails.accountNumber}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-800">
+                <span className="text-slate-400 text-xs">SWIFT / BIC:</span>
+                <span className="text-slate-100 font-mono font-bold text-right text-xs">{wireTransferDetails.swiftCode}</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-400 text-xs">Routing / Sort Code:</span>
+                <span className="text-slate-100 font-mono text-right text-xs">{wireTransferDetails.routingNumber}</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-800 text-xs text-slate-300 leading-relaxed mb-6">
+              <span className="font-semibold text-amber-300 block mb-1">Important Narration Note:</span>
+              {wireTransferDetails.instructions}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  const wireText = `Cereno Homes - Wire Transfer Details\nReference: ${wireTransferDetails.reference}\nAmount: ${wireTransferDetails.currency} ${Number(wireTransferDetails.amount).toLocaleString()}\nBank: ${wireTransferDetails.bankName}\nAccount Name: ${wireTransferDetails.accountName}\nAccount Number: ${wireTransferDetails.accountNumber}\nSWIFT: ${wireTransferDetails.swiftCode}\nRouting: ${wireTransferDetails.routingNumber}`;
+                  await navigator.clipboard.writeText(wireText);
+                  setCopiedWireDetails(true);
+                  setTimeout(() => setCopiedWireDetails(false), 3000);
+                  showToast("Copied to Clipboard", "Bank wire instructions copied successfully.", "success");
+                }}
+                className="flex-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 py-3 rounded-xl transition-colors font-medium flex items-center justify-center gap-2"
+              >
+                {copiedWireDetails ? (
+                  <>
+                    <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    Details Copied!
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                    Copy Wire Details
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setWireTransferDetails(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-3 rounded-xl transition-colors font-medium"
+              >
+                Done
               </button>
             </div>
           </div>

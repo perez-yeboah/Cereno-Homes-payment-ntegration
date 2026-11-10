@@ -13,6 +13,7 @@ import {
   fetchAllInvoices,
   createInvoicePaymentLink,
   regenerateInvoicePaymentLink,
+  splitInvoice,
   recordManualPayment,
   downloadPaymentReceipt
 } from '../services/api';
@@ -63,6 +64,9 @@ const AdminDashboard: React.FC = () => {
     description: '',
     sendEmail: true
   });
+  const [splitTargetInvoice, setSplitTargetInvoice] = useState<any>(null);
+  const [trancheCount, setTrancheCount] = useState<number>(2);
+  const [isSplitting, setIsSplitting] = useState<boolean>(false);
   
   // Properties State
   const [properties, setProperties] = useState<any[]>([]);
@@ -150,6 +154,14 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleGenerateLinkForExisting = async (invoiceId: string, sendEmail: boolean = false) => {
+    const targetInv = allInvoices.find(i => i.id === invoiceId);
+    if (targetInv && Number(targetInv.amountDue) > 999999.99) {
+      showToast('Stripe Limit Exceeded', `This invoice of ${formatCurrency(targetInv.amountDue, targetInv.currency)} exceeds Stripe's $999,999.99 single payment limit. Please click 'Split Tranches' to divide it into milestone installments.`, 'warning');
+      setSplitTargetInvoice(targetInv);
+      setTrancheCount(Math.ceil(Number(targetInv.amountDue) / 900000));
+      return;
+    }
+
     setGeneratingLinkId(invoiceId);
     try {
       const result = await regenerateInvoicePaymentLink(invoiceId, sendEmail);
@@ -168,6 +180,23 @@ const AdminDashboard: React.FC = () => {
       showToast('Link Generation Error', error.response?.data?.error || error.message || 'Failed to generate link', 'error');
     } finally {
       setGeneratingLinkId(null);
+    }
+  };
+
+  const handleSplitInvoice = async () => {
+    if (!splitTargetInvoice) return;
+    setIsSplitting(true);
+    try {
+      await splitInvoice(splitTargetInvoice.id, trancheCount);
+      showToast('Invoice Split Successfully', `Invoice split into ${trancheCount} tranches. New payment links can now be generated for each tranche.`, 'success');
+      setSplitTargetInvoice(null);
+      await loadAllInvoices();
+      fetchOverdueInvoices().then(data => setInvoices(data.data)).catch(console.error);
+    } catch (error: any) {
+      console.error('Failed to split invoice', error);
+      showToast('Split Error', error.response?.data?.error || error.message || 'Failed to split invoice', 'error');
+    } finally {
+      setIsSplitting(false);
     }
   };
 
@@ -1139,7 +1168,13 @@ const AdminDashboard: React.FC = () => {
                       <div className="text-xs text-slate-500 mt-0.5">{inv.clientEmail}</div>
                     </td>
                     <td className="px-6 py-4 font-semibold text-slate-100">
-                      {inv.currency === 'USD' ? '$' : inv.currency === 'EUR' ? '€' : '₵'}{Number(inv.amountDue).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      <div>{inv.currency === 'USD' ? '$' : inv.currency === 'EUR' ? '€' : '₵'}{Number(inv.amountDue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                      {Number(inv.amountDue) > 999999.99 && (
+                        <span className="text-[10px] text-amber-400 font-normal inline-flex items-center gap-1 mt-0.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                          Exceeds Stripe $1M Cap
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-slate-300">{new Date(inv.dueDate).toLocaleDateString()}</div>
@@ -1166,6 +1201,32 @@ const AdminDashboard: React.FC = () => {
                     <td className="px-6 py-4 text-right">
                       {!inv.isPaid ? (
                         <div className="flex justify-end items-center gap-2">
+                          {Number(inv.amountDue) > 999999.99 ? (
+                            <button
+                              onClick={() => {
+                                setSplitTargetInvoice(inv);
+                                setTrancheCount(Math.ceil(Number(inv.amountDue) / 900000));
+                              }}
+                              className="px-3 py-1.5 text-xs rounded-lg border bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40 font-semibold transition flex items-center gap-1.5 shadow-lg shadow-amber-950/20"
+                              title="Invoice exceeds $999k Stripe ceiling. Split into milestone tranches."
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                              Split Tranches
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setSplitTargetInvoice(inv);
+                                setTrancheCount(2);
+                              }}
+                              className="px-2.5 py-1.5 text-xs rounded-lg border bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700 transition flex items-center gap-1"
+                              title="Split this invoice into 2 or more milestone tranches"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                              Split
+                            </button>
+                          )}
+
                           <button
                             onClick={() => handleGenerateLinkForExisting(inv.id, false)}
                             disabled={generatingLinkId === inv.id}
@@ -1368,6 +1429,20 @@ const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
+              {Number(newInvoiceForm.amount) > 999999.99 && (
+                <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-200 text-xs flex items-start gap-3">
+                  <svg className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div>
+                    <span className="font-semibold block text-amber-300 text-sm mb-0.5">Stripe Single Transaction Limit ($999,999.99)</span>
+                    <p className="text-slate-300">
+                      Stripe limits single online credit card transactions to $999,999.99. You can enter smaller milestone installment amounts (e.g. {formatCurrency(Number(newInvoiceForm.amount) / 2, balances.find(b => b.planId === newInvoiceForm.paymentPlanId)?.currency || 'USD')} each) or record as a Bank Wire Payment.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">Invoice Memo / Description (Optional)</label>
                 <input
@@ -1508,6 +1583,98 @@ const AdminDashboard: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Split Invoice Modal */}
+      {splitTargetInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass-panel w-full max-w-lg p-6 rounded-2xl border border-slate-700 shadow-2xl relative">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-medium text-slate-100">Split Invoice into Milestone Tranches</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Divide this invoice into multiple milestone installments so that each payment stays under the Stripe $999,999.99 limit.
+                </p>
+              </div>
+              <button 
+                onClick={() => setSplitTargetInvoice(null)}
+                className="text-slate-400 hover:text-slate-200 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-900/60 rounded-xl border border-slate-700/60 mb-5">
+              <div className="flex justify-between text-sm mb-1.5">
+                <span className="text-slate-400">Client:</span>
+                <span className="text-slate-200 font-medium">{splitTargetInvoice.clientName}</span>
+              </div>
+              <div className="flex justify-between text-sm mb-1.5">
+                <span className="text-slate-400">Property:</span>
+                <span className="text-slate-300 text-xs truncate max-w-[250px]">{splitTargetInvoice.propertyAddress}</span>
+              </div>
+              <div className="flex justify-between text-sm pt-2 border-t border-slate-800">
+                <span className="text-slate-400">Total Invoice Amount:</span>
+                <span className="text-brand-secondary font-bold text-base">
+                  {formatCurrency(splitTargetInvoice.amountDue, splitTargetInvoice.currency)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-slate-300 mb-2">Select Number of Tranches:</label>
+              <div className="grid grid-cols-3 gap-3">
+                {[2, 3, 4].map(num => {
+                  const trancheAmount = Number(splitTargetInvoice.amountDue) / num;
+                  const isCompliant = trancheAmount <= 999999.99;
+                  return (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setTrancheCount(num)}
+                      className={`p-3 rounded-xl border text-center transition-all ${
+                        trancheCount === num 
+                          ? 'bg-brand-primary/20 border-brand-primary text-white shadow-lg shadow-brand-primary/10' 
+                          : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      <div className="font-semibold text-sm">{num} Tranches</div>
+                      <div className={`text-xs mt-1 font-mono font-medium ${isCompliant ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {formatCurrency(trancheAmount, splitTargetInvoice.currency)}
+                      </div>
+                      {isCompliant ? (
+                        <span className="text-[10px] text-emerald-400/80 block mt-0.5">Stripe OK</span>
+                      ) : (
+                        <span className="text-[10px] text-amber-400/80 block mt-0.5">Still {'>'}$1M</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-400 mt-3">
+                Each tranche will be generated as a separate invoice due 30 days apart, each with its own Stripe checkout link.
+              </p>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4 border-t border-slate-700/50">
+              <button
+                type="button"
+                onClick={() => setSplitTargetInvoice(null)}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSplitInvoice}
+                disabled={isSplitting}
+                className="px-5 py-2 text-sm bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition shadow-lg shadow-brand-primary/20 font-medium flex items-center gap-2"
+              >
+                {isSplitting ? 'Splitting Invoices...' : `Confirm & Create ${trancheCount} Tranches`}
+              </button>
+            </div>
           </div>
         </div>
       )}

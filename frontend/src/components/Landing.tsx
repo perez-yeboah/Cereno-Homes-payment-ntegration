@@ -87,9 +87,16 @@ const Landing: React.FC = () => {
                       </div>
                     )}
                     <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] font-bold px-2 py-1 rounded border bg-green-500/20 text-green-400 border-green-500/30">
-                        AVAILABLE
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold px-2 py-1 rounded border bg-green-500/20 text-green-400 border-green-500/30">
+                          AVAILABLE
+                        </span>
+                        {Number(property.basePrice) >= 1000000 && (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded border bg-blue-500/20 text-blue-300 border-blue-500/30">
+                            Part Payments
+                          </span>
+                        )}
+                      </div>
                       <span className="text-sm font-bold text-brand-secondary">
                         {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                       </span>

@@ -73,6 +73,11 @@ export const regenerateInvoicePaymentLink = async (invoiceId: string, sendEmail:
   return response.data;
 };
 
+export const splitInvoice = async (invoiceId: string, tranches: number = 2) => {
+  const response = await api.post(`/admin/invoices/${invoiceId}/split`, { tranches });
+  return response.data;
+};
+
 // Properties
 export const fetchProperties = async () => {
   const response = await api.get('/properties');
