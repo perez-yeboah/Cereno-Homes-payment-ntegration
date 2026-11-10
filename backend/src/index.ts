@@ -91,6 +91,20 @@ Promise.all([
   console.warn('[Currency Migration] Non-fatal migration check:', err?.message || err);
 });
 
+// Ensure 25M property is kept off the site and properties >= 1M are scaled to <= 990,000
+Promise.all([
+  dbStartup.property.updateMany({
+    where: { basePrice: { gte: 20000000 }, status: 'AVAILABLE' },
+    data: { status: 'SOLD' }
+  }),
+  dbStartup.property.updateMany({
+    where: { basePrice: { gte: 1000000, lt: 20000000 } },
+    data: { basePrice: 980000 }
+  })
+]).catch((err) => {
+  console.warn('[Property Cap Check] Non-fatal property adjustment:', err?.message || err);
+});
+
 // Ensure info@cerenohomesghana.com is synced as an active admin user
 dbStartup.adminUser.findFirst({ where: { email: 'info@cerenohomesghana.com' } }).then(async (exists) => {
   if (!exists) {
