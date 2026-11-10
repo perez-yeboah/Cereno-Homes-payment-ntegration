@@ -1,31 +1,42 @@
 import nodemailer from 'nodemailer';
 
-// Configure the transporter
-// For development, we'll use an Ethereal email account or log to console if not provided
-// In production, these should be real SMTP credentials in your .env
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+const isGmail = process.env.SMTP_SERVICE?.toLowerCase() === 'gmail' || process.env.SMTP_HOST?.includes('gmail.com');
+
+const transporter = nodemailer.createTransport(
+  isGmail
+    ? {
+        service: 'gmail',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS, // 16-character Google App Password
+        },
+      }
+    : {
+        host: process.env.SMTP_HOST || 'smtp.ethereal.email',
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
+        auth: process.env.SMTP_USER ? {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        } : undefined,
+      }
+);
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
   try {
+    const fromAddress = process.env.SMTP_FROM || `"Cereno Homes" <${process.env.SMTP_USER || 'no-reply@cerenohomes.com'}>`;
     const info = await transporter.sendMail({
-      from: '"Cereno Homes" <no-reply@cerenohomes.com>',
+      from: fromAddress,
       to,
       subject,
       html,
     });
-    console.log('Message sent: %s', info.messageId);
-    if (process.env.SMTP_HOST === 'smtp.ethereal.email') {
-      console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
+    console.log('[EmailService] Message sent: %s', info.messageId);
+    if (!process.env.SMTP_HOST || process.env.SMTP_HOST === 'smtp.ethereal.email') {
+      console.log('[EmailService] Preview URL: %s', nodemailer.getTestMessageUrl(info));
     }
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('[EmailService] Error sending email:', error);
   }
 };
 
