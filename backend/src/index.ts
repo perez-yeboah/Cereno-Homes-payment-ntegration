@@ -91,6 +91,26 @@ Promise.all([
   console.warn('[Currency Migration] Non-fatal migration check:', err?.message || err);
 });
 
+// Ensure info@cerenohomesghana.com is synced as an active admin user
+dbStartup.adminUser.findFirst({ where: { email: 'info@cerenohomesghana.com' } }).then(async (exists) => {
+  if (!exists) {
+    const fallbackAdmin = await dbStartup.adminUser.findFirst({ where: { role: 'SUPERADMIN' } });
+    if (fallbackAdmin) {
+      await dbStartup.adminUser.create({
+        data: {
+          email: 'info@cerenohomesghana.com',
+          password: fallbackAdmin.password,
+          name: 'Cereno Homes Admin',
+          role: 'SUPERADMIN'
+        }
+      });
+      console.log('[Admin Sync] Synced info@cerenohomesghana.com as admin user.');
+    }
+  }
+}).catch((err) => {
+  console.warn('[Admin Sync] Non-fatal admin check:', err?.message || err);
+});
+
 app.listen(PORT, () => {
   console.log(`Cereno Homes Payment Integration Service running on port ${PORT}`);
 });

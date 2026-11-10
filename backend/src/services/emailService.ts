@@ -24,7 +24,7 @@ const transporter = nodemailer.createTransport(
 
 export const sendEmail = async (to: string, subject: string, html: string) => {
   try {
-    const fromAddress = process.env.SMTP_FROM || `"Cereno Homes" <${process.env.SMTP_USER || 'no-reply@cerenohomes.com'}>`;
+    const fromAddress = process.env.SMTP_FROM || `"Cereno Homes" <${process.env.SMTP_USER || 'info@cerenohomesghana.com'}>`;
     const info = await transporter.sendMail({
       from: fromAddress,
       to,
