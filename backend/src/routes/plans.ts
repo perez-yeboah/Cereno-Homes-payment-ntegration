@@ -15,7 +15,7 @@ router.post('/', async (req, res) => {
         propertyId,
         type, // 'RENT_TO_OWN' | 'PAY_TO_OWN'
         totalAmount,
-        currency: currency || 'GHS',
+        currency: (currency && currency !== 'GHS') ? currency : 'USD',
         scheduleDetails,
       },
     });
@@ -59,7 +59,7 @@ router.get('/:id/ledger', async (req, res) => {
         type: plan.type,
         status: plan.status,
         totalAmount: plan.totalAmount,
-        currency: plan.currency,
+        currency: (plan.currency && plan.currency !== 'GHS') ? plan.currency : (plan.property?.currency && plan.property?.currency !== 'GHS') ? plan.property.currency : 'USD',
         equityAccrued: plan.equityAccrued,
         totalPaid,
         balanceRemaining,

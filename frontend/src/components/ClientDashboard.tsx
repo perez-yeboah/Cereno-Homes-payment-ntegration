@@ -215,33 +215,39 @@ const ClientDashboard: React.FC = () => {
           <div className="text-slate-500 bg-slate-900/30 p-6 rounded-2xl border border-slate-800">You don't have any active payment plans yet.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {plans?.map((plan: any) => (
-              <div key={plan.id} className="glass-panel p-5 rounded-2xl border border-brand-primary/30 flex flex-col relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-2 text-xs font-bold bg-brand-primary text-white rounded-bl-xl">{plan.type}</div>
-                <h3 className="text-lg font-semibold text-slate-200 mt-2">{plan.property?.address}</h3>
-                <div className="mt-4 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Total Price:</span>
-                    <span className="text-slate-200 font-medium">₵{Number(plan.totalAmount).toLocaleString()}</span>
+            {plans?.map((plan: any) => {
+              const currSymbol = plan.currency === 'USD' ? '$' : plan.currency === 'EUR' ? '€' : plan.currency === 'GHS' ? '₵' : '$';
+              return (
+                <div key={plan.id} className="glass-panel p-5 rounded-2xl border border-brand-primary/30 flex flex-col relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-2 text-xs font-bold bg-brand-primary text-white rounded-bl-xl">{plan.type}</div>
+                  {plan.property?.type && (
+                    <div className="text-xs font-semibold text-brand-primary uppercase tracking-wider mt-1">{plan.property.type}</div>
+                  )}
+                  <h3 className="text-lg font-semibold text-slate-200 mt-1">{plan.property?.address || 'Address pending'}</h3>
+                  <div className="mt-4 text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Total Price:</span>
+                      <span className="text-slate-200 font-medium">{currSymbol}{Number(plan.totalAmount).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Total Paid:</span>
+                      <span className="text-green-400 font-medium">{currSymbol}{Number(plan.totalPaid).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Balance:</span>
+                      <span className="text-brand-accent font-medium">{currSymbol}{Number(plan.balanceRemaining).toLocaleString()}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Total Paid:</span>
-                    <span className="text-green-400 font-medium">₵{Number(plan.totalPaid).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Balance:</span>
-                    <span className="text-brand-accent font-medium">₵{Number(plan.balanceRemaining).toLocaleString()}</span>
-                  </div>
+                  
+                  <button 
+                    onClick={() => setSelectedPlanForLedger(plan)}
+                    className="mt-6 w-full bg-slate-800 hover:bg-brand-primary hover:text-white text-slate-200 py-2 rounded-xl transition-all text-sm font-medium border border-slate-700 hover:border-brand-primary"
+                  >
+                    View Ledger & Pay
+                  </button>
                 </div>
-                
-                <button 
-                  onClick={() => setSelectedPlanForLedger(plan)}
-                  className="mt-6 w-full bg-slate-800 hover:bg-brand-primary hover:text-white text-slate-200 py-2 rounded-xl transition-all text-sm font-medium border border-slate-700 hover:border-brand-primary"
-                >
-                  View Ledger & Pay
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -255,19 +261,27 @@ const ClientDashboard: React.FC = () => {
           <div className="text-slate-500 bg-slate-900/30 p-6 rounded-2xl border border-slate-800">You haven't submitted any applications yet.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {interests?.map((interest: any) => (
-              <div key={interest.id} className="glass-panel p-5 rounded-2xl border border-slate-700/50 flex flex-col">
-                <h3 className="text-lg font-semibold text-slate-200">{interest.property.address}</h3>
-                <div className="mt-2 text-sm">
-                  <span className="text-slate-400">Status: </span>
-                  <span className={`font-semibold ${
-                    interest.status === 'APPROVED' ? 'text-green-400' :
-                    interest.status === 'REJECTED' ? 'text-red-400' :
-                    'text-yellow-400'
-                  }`}>
-                    {interest.status}
-                  </span>
-                </div>
+            {interests?.map((interest: any) => {
+              const propCurr = interest.property?.currency === 'USD' ? '$' : interest.property?.currency === 'EUR' ? '€' : interest.property?.currency === 'GHS' ? '₵' : '$';
+              return (
+                <div key={interest.id} className="glass-panel p-5 rounded-2xl border border-slate-700/50 flex flex-col">
+                  {interest.property?.type && (
+                    <div className="text-xs font-semibold text-brand-primary uppercase tracking-wider mb-1">{interest.property.type}</div>
+                  )}
+                  <h3 className="text-lg font-semibold text-slate-200">{interest.property?.address || 'Address pending'}</h3>
+                  <div className="text-sm font-bold text-brand-secondary mt-1">
+                    {propCurr}{Number(interest.property?.basePrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <div className="mt-2 text-sm">
+                    <span className="text-slate-400">Status: </span>
+                    <span className={`font-semibold ${
+                      interest.status === 'APPROVED' ? 'text-green-400' :
+                      interest.status === 'REJECTED' ? 'text-red-400' :
+                      'text-yellow-400'
+                    }`}>
+                      {interest.status}
+                    </span>
+                  </div>
                 
                 {interest.status === 'APPROVED' && (
                   <button 
@@ -291,8 +305,9 @@ const ClientDashboard: React.FC = () => {
                     Cancel Application
                   </button>
                 )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -824,8 +839,22 @@ const ClientDashboard: React.FC = () => {
       {selectedPlanForLedger && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-brand-surface border border-slate-700/50 p-8 rounded-3xl max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-semibold mb-2 text-slate-100">Plan Details & Ledger</h2>
-            <p className="text-slate-400 text-sm mb-6">{selectedPlanForLedger.property?.address}</p>
+            <h2 className="text-2xl font-semibold mb-1 text-slate-100">Plan Details & Ledger</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6 pb-4 border-b border-slate-800">
+              <div>
+                {selectedPlanForLedger.property?.type && (
+                  <span className="text-xs text-brand-primary font-semibold uppercase tracking-wider block">{selectedPlanForLedger.property.type}</span>
+                )}
+                <p className="text-slate-300 font-medium text-sm">{selectedPlanForLedger.property?.address || 'Address pending'}</p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-400 block">Total Plan Price</span>
+                <span className="text-lg font-bold text-brand-secondary">
+                  {selectedPlanForLedger.currency === 'USD' ? '$' : selectedPlanForLedger.currency === 'EUR' ? '€' : selectedPlanForLedger.currency === 'GHS' ? '₵' : '$'}
+                  {Number(selectedPlanForLedger.totalAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
 
             <div className="bg-slate-900/50 rounded-xl border border-slate-800 p-4 mb-8">
               <h3 className="text-lg font-medium text-slate-200 mb-4">Make a Payment</h3>

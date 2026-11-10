@@ -765,7 +765,7 @@ const AdminDashboard: React.FC = () => {
         <div className="glass-panel p-5 rounded-2xl border border-slate-700/50">
           <span className="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-1">Total Processed Volume</span>
           <div className="text-2xl font-bold text-slate-100">
-            ₵{totalVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${totalVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <span className="text-xs text-slate-500 mt-1 block">Total client payments received</span>
         </div>
@@ -776,7 +776,7 @@ const AdminDashboard: React.FC = () => {
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-semibold">STRIPE</span>
           </div>
           <div className="text-2xl font-bold text-indigo-400">
-            ₵{stripeVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${stripeVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <span className="text-xs text-slate-400 mt-1 block">
             {transactions.filter(t => t.payment?.provider?.toUpperCase().includes('STRIPE')).length} online transactions
@@ -789,7 +789,7 @@ const AdminDashboard: React.FC = () => {
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold">WIRE</span>
           </div>
           <div className="text-2xl font-bold text-emerald-400">
-            ₵{wireVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${wireVolume.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <span className="text-xs text-slate-400 mt-1 block">
             {transactions.filter(t => t.payment?.provider?.toUpperCase().includes('MANUAL') || t.payment?.provider?.toUpperCase().includes('WIRE')).length} manual entries
@@ -1168,7 +1168,7 @@ const AdminDashboard: React.FC = () => {
                       <div className="text-xs text-slate-500 mt-0.5">{inv.clientEmail}</div>
                     </td>
                     <td className="px-6 py-4 font-semibold text-slate-100">
-                      <div>{inv.currency === 'USD' ? '$' : inv.currency === 'EUR' ? '€' : '₵'}{Number(inv.amountDue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                      <div>{inv.currency === 'USD' ? '$' : inv.currency === 'EUR' ? '€' : inv.currency === 'GHS' ? '₵' : '$'}{Number(inv.amountDue).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                       {Number(inv.amountDue) > 999999.99 && (
                         <span className="text-[10px] text-amber-400 font-normal inline-flex items-center gap-1 mt-0.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>

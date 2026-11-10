@@ -167,7 +167,7 @@ router.post('/plans', authenticateClient, async (req: AuthRequest, res) => {
         propertyId,
         type: type as PlanType,
         totalAmount: property.basePrice,
-        currency: property.currency,
+        currency: (property.currency && property.currency !== 'GHS') ? property.currency : 'USD',
         scheduleDetails: { createdByClient: true, initialPayment: true },
         status: 'ACTIVE'
       }
