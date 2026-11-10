@@ -330,7 +330,7 @@ const ClientDashboard: React.FC = () => {
                     )}
                   </div>
                   <span className="text-sm font-semibold text-brand-secondary">
-                    {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : property.currency === 'GHS' ? '₵' : '$'}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                   </span>
                 </div>
                 {property.type && (
@@ -419,7 +419,7 @@ const ClientDashboard: React.FC = () => {
               <div className="text-right">
                 <span className="text-xs text-slate-500 block">Total Property Price</span>
                 <span className="text-lg font-bold text-brand-secondary">
-                  {selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : 'GHS '}
+                  {selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : selectedProperty.currency === 'GHS' ? '₵' : '$'}
                   {Number(selectedProperty.basePrice).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>
@@ -481,7 +481,7 @@ const ClientDashboard: React.FC = () => {
               }
 
               const currentDepositAmt = totalPrice * (initialDepositPercentage / 100);
-              const currSymbol = selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : 'GHS ';
+              const currSymbol = selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : selectedProperty.currency === 'GHS' ? '₵' : '$';
 
               return (
                 <div className="bg-slate-900/50 border border-slate-700/50 p-5 rounded-2xl mb-6">
@@ -547,7 +547,7 @@ const ClientDashboard: React.FC = () => {
             {/* Mode 2: Full Purchase Options */}
             {purchaseMode === 'FULL' && (() => {
               const totalPrice = Number(selectedProperty.basePrice);
-              const currSymbol = selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : 'GHS ';
+              const currSymbol = selectedProperty.currency === 'USD' ? '$' : selectedProperty.currency === 'EUR' ? '€' : selectedProperty.currency === 'GHS' ? '₵' : '$';
               const isHigh = totalPrice >= 1000000;
               const fullTranches = Math.max(2, Math.ceil(totalPrice / 900000));
               const trancheAmt = Math.round((totalPrice / fullTranches) * 100) / 100;
@@ -834,7 +834,7 @@ const ClientDashboard: React.FC = () => {
                   type="number" 
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder="Amount in GHS"
+                  placeholder="Amount in USD"
                   className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 text-slate-200 focus:outline-none focus:border-brand-primary"
                 />
                 <button 
@@ -849,6 +849,7 @@ const ClientDashboard: React.FC = () => {
                         totalPrice,
                         paymentAmount: amount,
                         percentage,
+                        currency: selectedPlanForLedger.currency || 'USD',
                         onProceed: () => customPaymentMutation.mutate(amount)
                       });
                     } else {
@@ -875,7 +876,7 @@ const ClientDashboard: React.FC = () => {
                       <span className="block text-slate-400 text-xs mt-1">{new Date(entry.transactionDate).toLocaleString()}</span>
                     </div>
                     <span className={`font-semibold ${Number(entry.amountGHS) > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {Number(entry.amountGHS) > 0 ? '+' : ''}{Number(entry.amountGHS).toLocaleString()} GHS
+                      {Number(entry.amountGHS) > 0 ? '+' : ''}${Number(entry.amountGHS).toLocaleString()}
                     </span>
                   </div>
                 ))}
@@ -904,7 +905,7 @@ const ClientDashboard: React.FC = () => {
               <div className="flex justify-between items-center p-4 bg-slate-900/50 rounded-xl border border-slate-700/50">
                 <span className="text-slate-400">Total Property Price</span>
                 <span className="text-slate-200 font-medium">
-                  {paymentSummary.currency === 'USD' ? '$' : paymentSummary.currency === 'EUR' ? '€' : 'GHS '}
+                  {paymentSummary.currency === 'USD' ? '$' : paymentSummary.currency === 'EUR' ? '€' : paymentSummary.currency === 'GHS' ? '₵' : '$'}
                   {paymentSummary.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
@@ -926,7 +927,7 @@ const ClientDashboard: React.FC = () => {
               <div className="flex justify-between items-center p-4 bg-slate-900/80 rounded-xl border border-brand-primary/50">
                 <span className="text-slate-200 font-medium">Amount to Pay</span>
                 <span className="text-xl font-bold text-white">
-                  {paymentSummary.currency === 'USD' ? '$' : paymentSummary.currency === 'EUR' ? '€' : 'GHS '}
+                  {paymentSummary.currency === 'USD' ? '$' : paymentSummary.currency === 'EUR' ? '€' : paymentSummary.currency === 'GHS' ? '₵' : '$'}
                   {paymentSummary.paymentAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
@@ -1005,7 +1006,7 @@ const ClientDashboard: React.FC = () => {
               <div className="flex justify-between items-center mb-1">
                 <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Total Wire Amount</span>
                 <span className="text-xl font-extrabold text-amber-300">
-                  {wireTransferDetails.currency === 'USD' ? '$' : wireTransferDetails.currency === 'EUR' ? '€' : 'GHS '}
+                  {wireTransferDetails.currency === 'USD' ? '$' : wireTransferDetails.currency === 'EUR' ? '€' : wireTransferDetails.currency === 'GHS' ? '₵' : '$'}
                   {Number(wireTransferDetails.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
               </div>

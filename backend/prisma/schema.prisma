@@ -49,7 +49,7 @@ model Property {
   planTypesAvailable PlanType[]
   requiredFormFields Json?    // Configured by admin for clients to fill
   basePrice          Decimal
-  currency           String   @default("GHS")
+  currency           String   @default("USD")
   status             PropertyStatus @default(AVAILABLE)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -83,7 +83,7 @@ model PaymentPlan {
   type           PlanType
   totalAmount    Decimal
   equityAccrued  Decimal    @default(0)
-  currency       String     @default("GHS")
+  currency       String     @default("USD")
   scheduleDetails Json
   status         PlanStatus @default(ACTIVE)
   createdAt      DateTime   @default(now())
@@ -129,7 +129,7 @@ model Payment {
   status                PaymentStatus @default(PENDING)
   originalCurrency      String
   originalAmount        Decimal
-  settledCurrency       String        @default("GHS")
+  settledCurrency       String        @default("USD")
   settledAmount         Decimal?
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt

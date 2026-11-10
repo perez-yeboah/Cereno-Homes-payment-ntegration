@@ -107,9 +107,9 @@ const ClientPortal: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Amount to Pay (GHS)</label>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Amount to Pay (USD)</label>
             <div className="relative">
-              <span className="absolute left-4 top-3.5 text-slate-500 font-medium">₵</span>
+              <span className="absolute left-4 top-3.5 text-slate-500 font-medium">$</span>
               <input 
                 {...register('amount', { valueAsNumber: true })}
                 type="number" 

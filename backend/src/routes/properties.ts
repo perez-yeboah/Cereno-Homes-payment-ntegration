@@ -35,7 +35,11 @@ router.get('/', async (req, res) => {
     const properties = await prisma.property.findMany({
       where: { status: 'AVAILABLE' },
     });
-    res.json(properties);
+    const normalized = properties.map(p => ({
+      ...p,
+      currency: (p.currency && p.currency !== 'GHS') ? p.currency : 'USD'
+    }));
+    res.json(normalized);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch properties' });
   }
@@ -97,7 +101,7 @@ router.post('/', upload.array('images', 10), async (req, res) => {
         planTypesAvailable: planTypesAvailable ? JSON.parse(planTypesAvailable as string) : [],
         requiredFormFields: requiredFormFields ? JSON.parse(requiredFormFields as string) : {},
         basePrice: parseFloat(basePrice as string),
-        currency: currency || 'GHS',
+        currency: (currency && currency !== 'GHS') ? currency : 'USD',
       }
     });
     res.status(201).json(property);

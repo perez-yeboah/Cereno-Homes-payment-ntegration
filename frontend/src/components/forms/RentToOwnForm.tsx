@@ -168,7 +168,7 @@ const RentToOwnForm: React.FC<RentToOwnFormProps> = ({ onSubmit, onCancel, isSub
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1 text-slate-300">Monthly Gross Salary (GHS)</label>
+              <label className="block text-sm font-medium mb-1 text-slate-300">Monthly Gross Salary (USD)</label>
               <input required type="number" name="grossSalary" value={formData.grossSalary || ''} onChange={handleChange} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl focus:border-brand-primary outline-none" />
             </div>
             <div>
@@ -222,7 +222,7 @@ const RentToOwnForm: React.FC<RentToOwnFormProps> = ({ onSubmit, onCancel, isSub
             </div>
             {formData.isRenting === 'Yes' && (
               <div>
-                <label className="block text-sm font-medium mb-1 text-slate-300">If Yes, Monthly Rent (GHS)</label>
+                <label className="block text-sm font-medium mb-1 text-slate-300">If Yes, Monthly Rent (USD)</label>
                 <input required type="number" name="monthlyRent" value={formData.monthlyRent || ''} onChange={handleChange} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl focus:border-brand-primary outline-none" />
               </div>
             )}
@@ -246,7 +246,7 @@ const RentToOwnForm: React.FC<RentToOwnFormProps> = ({ onSubmit, onCancel, isSub
         {currentStep === 3 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
             <div>
-              <label className="block text-sm font-medium mb-1 text-slate-300">Proposed Initial Deposit (GHS)</label>
+              <label className="block text-sm font-medium mb-1 text-slate-300">Proposed Initial Deposit (USD)</label>
               <input required type="number" name="proposedInitialDeposit" value={formData.proposedInitialDeposit || ''} onChange={handleChange} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl focus:border-brand-primary outline-none" />
             </div>
             <div>
@@ -260,7 +260,7 @@ const RentToOwnForm: React.FC<RentToOwnFormProps> = ({ onSubmit, onCancel, isSub
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1 text-slate-300">Preferred Monthly Repayment (GHS)</label>
+              <label className="block text-sm font-medium mb-1 text-slate-300">Preferred Monthly Repayment (USD)</label>
               <input required type="number" name="preferredMonthlyRepayment" value={formData.preferredMonthlyRepayment || ''} onChange={handleChange} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl focus:border-brand-primary outline-none" />
             </div>
             <div>

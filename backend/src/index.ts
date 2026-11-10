@@ -71,6 +71,26 @@ app.use((err: any, req: any, res: any, next: any) => {
 // Start background cron jobs
 startInvoiceEngine();
 
+// Automatic DB currency migration: Ensure all properties and plans default to USD
+import { PrismaClient } from '@prisma/client';
+const dbStartup = new PrismaClient();
+Promise.all([
+  dbStartup.property.updateMany({
+    where: { currency: 'GHS' },
+    data: { currency: 'USD' }
+  }),
+  dbStartup.paymentPlan.updateMany({
+    where: { currency: 'GHS' },
+    data: { currency: 'USD' }
+  })
+]).then(([propRes, planRes]) => {
+  if (propRes.count > 0 || planRes.count > 0) {
+    console.log(`[Currency Migration] Normalized ${propRes.count} properties and ${planRes.count} plans to USD.`);
+  }
+}).catch((err) => {
+  console.warn('[Currency Migration] Non-fatal migration check:', err?.message || err);
+});
+
 app.listen(PORT, () => {
   console.log(`Cereno Homes Payment Integration Service running on port ${PORT}`);
 });

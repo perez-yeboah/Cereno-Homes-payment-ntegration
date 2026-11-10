@@ -33,7 +33,7 @@ router.get('/balances', async (req, res) => {
         type: plan.type,
         totalAmount: plan.totalAmount,
         equityAccrued: plan.equityAccrued,
-        currency: plan.currency || plan.property?.currency || 'USD',
+        currency: (plan.currency && plan.currency !== 'GHS') ? plan.currency : 'USD',
         totalPaid,
         balanceRemaining,
       };
@@ -71,7 +71,7 @@ router.get('/invoices/overdue', async (req, res) => {
       invoiceId: invoice.id,
       clientName: invoice.paymentPlan.client.name,
       amountDue: invoice.amountDue,
-      currency: invoice.paymentPlan.currency || 'USD',
+      currency: (invoice.paymentPlan.currency && invoice.paymentPlan.currency !== 'GHS') ? invoice.paymentPlan.currency : 'USD',
       dueDate: invoice.dueDate,
       daysOverdue: Math.floor((today.getTime() - invoice.dueDate.getTime()) / (1000 * 3600 * 24)),
     }));
@@ -112,7 +112,7 @@ router.get('/invoices', async (req, res) => {
         clientPhone: inv.paymentPlan.client.phone,
         propertyAddress: inv.paymentPlan.property.address || 'Unknown Address',
         amountDue: Number(inv.amountDue),
-        currency: inv.paymentPlan.currency || 'USD',
+        currency: (inv.paymentPlan.currency && inv.paymentPlan.currency !== 'GHS') ? inv.paymentPlan.currency : 'USD',
         dueDate: inv.dueDate,
         isPaid: inv.isPaid,
         isOverdue,
@@ -162,7 +162,7 @@ router.post('/invoices/generate-link', async (req, res) => {
 
     // 2. Create Pending Payment record
     const reference = `inv_${invoice.id}_${Date.now()}`;
-    const currency = plan.currency || 'USD';
+    const currency = (plan.currency && plan.currency !== 'GHS') ? plan.currency : 'USD';
 
     const payment = await prisma.payment.create({
       data: {
@@ -266,7 +266,7 @@ router.post('/invoices/:id/payment-link', async (req, res) => {
 
     const plan = invoice.paymentPlan;
     const reference = `inv_${invoice.id}_${Date.now()}`;
-    const currency = plan.currency || 'USD';
+    const currency = (plan.currency && plan.currency !== 'GHS') ? plan.currency : 'USD';
     const numAmount = Number(invoice.amountDue);
 
     if (numAmount > 999999.99) {
@@ -413,9 +413,9 @@ router.post('/manual-entry', async (req, res) => {
           provider: 'MANUAL_WIRE',
           providerTransactionId: reference || `wire_${Date.now()}`,
           status: 'SUCCESS',
-          originalCurrency: originalCurrency || 'GHS',
+          originalCurrency: (originalCurrency && originalCurrency !== 'GHS') ? originalCurrency : 'USD',
           originalAmount: originalAmount || amountGHS,
-          settledCurrency: 'GHS', // Base settlement currency, architecture allows this to be USD if needed later
+          settledCurrency: 'USD',
           settledAmount: amountGHS,
         }
       });

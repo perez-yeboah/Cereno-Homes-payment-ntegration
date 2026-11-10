@@ -88,7 +88,11 @@ router.get('/properties', async (req, res) => {
     const properties = await prisma.property.findMany({
       where: { status: 'AVAILABLE' }
     });
-    res.json(properties);
+    const normalized = properties.map(p => ({
+      ...p,
+      currency: (p.currency && p.currency !== 'GHS') ? p.currency : 'USD'
+    }));
+    res.json(normalized);
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -117,9 +121,15 @@ router.get('/plans', authenticateClient, async (req: AuthRequest, res) => {
         .filter((e) => e.type === 'PAYMENT')
         .reduce((sum, e) => sum + Number(e.amountGHS), 0);
       const balanceRemaining = Number(plan.totalAmount) - totalPaid;
+      const effectiveCurrency = (plan.currency && plan.currency !== 'GHS') 
+        ? plan.currency 
+        : (plan.property?.currency && plan.property?.currency !== 'GHS') 
+          ? plan.property.currency 
+          : 'USD';
 
       return {
         ...plan,
+        currency: effectiveCurrency,
         totalPaid,
         balanceRemaining
       };
@@ -254,6 +264,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
     });
 
     const basePriceNumber = Number(property.basePrice);
+    const targetCurrency = (property.currency && property.currency !== 'GHS') ? property.currency : 'USD';
 
     // If Bank Wire was selected
     if (paymentMethod === 'WIRE') {
@@ -268,7 +279,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
           type: planType,
           totalAmount: property.basePrice,
           equityAccrued: 0,
-          currency: property.currency,
+          currency: targetCurrency,
           status: 'ACTIVE',
           scheduleDetails: { paymentMethod: 'WIRE', depositPct, isFullPayment },
         }
@@ -282,7 +293,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
           provider: 'MANUAL_WIRE',
           providerTransactionId: wireRef,
           status: 'PENDING',
-          originalCurrency: property.currency,
+          originalCurrency: targetCurrency,
           originalAmount: wireAmount,
         }
       });
@@ -304,7 +315,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
         wireTransfer: {
           reference: wireRef,
           amount: wireAmount,
-          currency: property.currency,
+          currency: targetCurrency,
           bankName: "Standard Chartered Bank / Guaranty Trust Bank (Ghana)",
           accountName: "Cereno Homes Limited",
           accountNumber: "0100234891100",
@@ -325,7 +336,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
           type: planType,
           totalAmount: property.basePrice,
           equityAccrued: 0,
-          currency: property.currency,
+          currency: targetCurrency,
           status: 'ACTIVE',
           scheduleDetails: { initialDepositPercentage, isFullPayment, trancheCount },
         }
@@ -341,7 +352,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
       }
 
       let chargeAmount = amountInOriginalCurrency;
-      let chargeCurrency = property.currency;
+      let chargeCurrency = targetCurrency;
 
       if (provider.toLowerCase() === 'paystack') {
         const EXCHANGE_RATES: Record<string, number> = {
@@ -349,7 +360,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
           'EUR': 16.50,
           'GHS': 1.00
         };
-        const rate = EXCHANGE_RATES[property.currency] || 1;
+        const rate = EXCHANGE_RATES[targetCurrency] || 1;
         chargeAmount = amountInOriginalCurrency * rate;
         chargeCurrency = 'GHS';
       }
@@ -376,7 +387,7 @@ router.post('/interests', authenticateClient, async (req: AuthRequest, res) => {
           provider: provider.toUpperCase(),
           providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`,
           status: 'PENDING',
-          originalCurrency: property.currency,
+          originalCurrency: targetCurrency,
           originalAmount: amountInOriginalCurrency,
         },
       });

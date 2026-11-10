@@ -19,7 +19,11 @@ router.post('/initialize', async (req, res) => {
       return res.status(404).json({ error: 'Payment plan not found' });
     }
 
-    const effectiveCurrency = currency || paymentPlan.currency || 'USD';
+    const effectiveCurrency = (currency && currency !== 'GHS') 
+      ? currency 
+      : (paymentPlan.currency && paymentPlan.currency !== 'GHS') 
+        ? paymentPlan.currency 
+        : 'USD';
     let chargeAmount = amount;
     let chargeCurrency = effectiveCurrency;
 
@@ -269,13 +273,19 @@ router.post('/charge-saved-card', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized or invalid saved card' });
     }
     
+    const effectiveCurrency = (currency && currency !== 'GHS')
+      ? currency
+      : (plan.currency && plan.currency !== 'GHS')
+        ? plan.currency
+        : 'USD';
+
     // Create a pending payment record
     const payment = await prisma.payment.create({
       data: {
         provider: provider.toUpperCase(),
         providerTransactionId: `txn_${Date.now()}_${Math.random().toString(36).substring(7)}`, 
         status: 'PENDING',
-        originalCurrency: currency,
+        originalCurrency: effectiveCurrency,
         originalAmount: amount,
       },
     });
@@ -287,7 +297,7 @@ router.post('/charge-saved-card', async (req, res) => {
     const chargeData = await paymentProvider.chargeAuthorization(
       plan.client.email,
       amount,
-      currency,
+      effectiveCurrency,
       payment.providerTransactionId,
       savedCard.authorizationCode,
       { paymentPlanId }

@@ -33,8 +33,9 @@ export class StripeService implements IPaymentProvider {
         throw new Error(`Amount of ${amount.toLocaleString('en-US', { style: 'currency', currency: currency || 'USD' })} exceeds Stripe's maximum single transaction limit ($999,999.99). Please divide into milestone tranches or proceed via Bank Wire Transfer.`);
       }
 
-      // Supported Stripe currencies are lowercase 3-letter ISO codes
-      const stripeCurrency = (currency || 'USD').toLowerCase();
+      // Supported Stripe currencies are lowercase 3-letter ISO codes (Cereno Homes operates in USD)
+      const normalizedCurrency = (currency && currency.toUpperCase() !== 'GHS') ? currency : 'USD';
+      const stripeCurrency = normalizedCurrency.toLowerCase();
 
       // Get or create Stripe Customer so payment method can be saved for future off-session charges
       let customerId: string | undefined;
@@ -214,7 +215,8 @@ export class StripeService implements IPaymentProvider {
     metadata?: any
   ) {
     try {
-      const stripeCurrency = (currency || 'USD').toLowerCase();
+      const normalizedCurrency = (currency && currency.toUpperCase() !== 'GHS') ? currency : 'USD';
+      const stripeCurrency = normalizedCurrency.toLowerCase();
       const unitAmount = Math.round(amount * 100);
 
       // Retrieve PaymentMethod to extract associated customer

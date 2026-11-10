@@ -98,7 +98,7 @@ const Landing: React.FC = () => {
                         )}
                       </div>
                       <span className="text-sm font-bold text-brand-secondary">
-                        {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : property.currency === 'GHS' ? '₵' : '$'}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                       </span>
                     </div>
                     {property.type && (

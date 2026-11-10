@@ -80,14 +80,14 @@ const AdminDashboard: React.FC = () => {
   const [applications, setApplications] = useState<any[]>([]);
 
   // Form States
-  const [newProperty, setNewProperty] = useState({ type: '', address: '', basePrice: '', description: '', currency: 'GHS' });
+  const [newProperty, setNewProperty] = useState({ type: '', address: '', basePrice: '', description: '', currency: 'USD' });
   const [formFields, setFormFields] = useState<string[]>(['']);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [updateData, setUpdateData] = useState({ title: '', content: '' });
 
   // Edit Property State
   const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
-  const [editPropertyForm, setEditPropertyForm] = useState({ type: '', address: '', basePrice: '', description: '', currency: 'GHS', status: 'AVAILABLE' });
+  const [editPropertyForm, setEditPropertyForm] = useState({ type: '', address: '', basePrice: '', description: '', currency: 'USD', status: 'AVAILABLE' });
   const [editSelectedImages, setEditSelectedImages] = useState<File[]>([]);
 
   const loadApplications = async () => {
@@ -234,7 +234,7 @@ const AdminDashboard: React.FC = () => {
       await recordManualPayment({
         paymentPlanId: manualWireForm.paymentPlanId,
         amountGHS: Number(manualWireForm.amount),
-        originalCurrency: plan?.currency || 'GHS',
+        originalCurrency: plan?.currency || 'USD',
         originalAmount: Number(manualWireForm.amount),
         reference: manualWireForm.reference || `WIRE-${Date.now()}`,
         date: manualWireForm.date || new Date().toISOString(),
@@ -311,7 +311,7 @@ const AdminDashboard: React.FC = () => {
 
       await createProperty(formData);
       setShowPropertyModal(false);
-      setNewProperty({ type: '', address: '', basePrice: '', description: '', currency: 'GHS' });
+      setNewProperty({ type: '', address: '', basePrice: '', description: '', currency: 'USD' });
       setFormFields(['']);
       setSelectedImages([]);
       // Refresh properties
@@ -491,7 +491,7 @@ const AdminDashboard: React.FC = () => {
                   {property.status}
                 </span>
                 <span className="text-sm font-semibold text-brand-secondary">
-                  {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : 'GHS '}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                  {property.currency === 'USD' ? '$' : property.currency === 'EUR' ? '€' : property.currency === 'GHS' ? '₵' : '$'}{Number(property.basePrice).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                 </span>
               </div>
               <h3 className="font-medium text-lg text-slate-100 mb-2">{property.address}</h3>
@@ -516,7 +516,7 @@ const AdminDashboard: React.FC = () => {
                     address: property.address || '',
                     basePrice: property.basePrice || '',
                     description: property.description || '',
-                    currency: property.currency || 'GHS',
+                    currency: property.currency || 'USD',
                     status: property.status || 'AVAILABLE'
                   });
                 }}
@@ -575,8 +575,8 @@ const AdminDashboard: React.FC = () => {
                     value={editPropertyForm.currency}
                     onChange={e => setEditPropertyForm({...editPropertyForm, currency: e.target.value})}
                   >
-                    <option value="GHS">GHS (₵)</option>
                     <option value="USD">USD ($)</option>
+                    <option value="GHS">GHS (₵)</option>
                     <option value="EUR">EUR (€)</option>
                   </select>
                   <input required type="number" className="w-2/3 p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={editPropertyForm.basePrice} onChange={e => setEditPropertyForm({...editPropertyForm, basePrice: e.target.value})} />
@@ -630,8 +630,8 @@ const AdminDashboard: React.FC = () => {
                     value={newProperty.currency}
                     onChange={e => setNewProperty({...newProperty, currency: e.target.value})}
                   >
-                    <option value="GHS">GHS (₵)</option>
                     <option value="USD">USD ($)</option>
+                    <option value="GHS">GHS (₵)</option>
                     <option value="EUR">EUR (€)</option>
                   </select>
                   <input required type="number" className="w-2/3 p-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-primary" value={newProperty.basePrice} onChange={e => setNewProperty({...newProperty, basePrice: e.target.value})} placeholder="0.00" />
@@ -952,9 +952,9 @@ const AdminDashboard: React.FC = () => {
 
                       <td className="px-6 py-4 text-right whitespace-nowrap">
                         <div className={`font-semibold ${Number(tx.amountGHS) < 0 ? 'text-amber-400' : 'text-slate-100'}`}>
-                          {Number(tx.amountGHS) < 0 ? '-' : ''}₵{Math.abs(Number(tx.amountGHS)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {Number(tx.amountGHS) < 0 ? '-' : ''}${Math.abs(Number(tx.amountGHS)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
-                        {tx.payment?.originalCurrency && tx.payment.originalCurrency !== 'GHS' && (
+                        {tx.payment?.originalCurrency && tx.payment.originalCurrency !== 'USD' && (
                           <div className="text-xs text-slate-400">
                             ({tx.payment.originalCurrency} {Number(tx.payment.originalAmount).toLocaleString()})
                           </div>
